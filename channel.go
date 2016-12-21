@@ -8,6 +8,7 @@ import (
 	"github.com/golang/glog"
 )
 
+// net.Conn that will prepend all writes with HEADER_DATA and the channelID
 type Channel struct {
 	conn net.Conn
 	ID   string

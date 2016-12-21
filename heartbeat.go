@@ -19,8 +19,9 @@ type heartbeatManager struct{}
 // Sends heartbeats as long as the connection isn't closed
 // and we do not get an error
 func SendHeartbeats(conn net.Conn) error {
+	hb := &HeartbeatFrame{}
 	for {
-		err := SendHeartbeat(conn)
+		err := SendFrame(conn, hb)
 		if err != nil {
 			glog.Warningf("Failed to heartbeat: %v", err)
 			return err
