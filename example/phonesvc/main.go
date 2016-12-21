@@ -24,6 +24,7 @@ func main() {
 
 	// Start that service
 	http.HandleFunc("/foo", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Println("HERE!")
 		fmt.Fprintf(w, "bar")
 	})
 	err = http.ListenAndServe(":10002", nil)

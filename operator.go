@@ -94,6 +94,7 @@ func (o *operator) Serve(port int) error {
 			err = o.respond(conn)
 			if err != nil {
 				glog.Warningf("Failed to respond to connection: %v", err)
+				conn.Close()
 				return
 			}
 			glog.V(2).Infof("Successfully handled connection")
@@ -194,7 +195,7 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 		return nil, err
 	}
 
-	channel := NewChannel(conn, cast.channelID)
+	channel := NewChannel(conn, receiverID, cast.channelID)
 	return channel, nil
 }
 
@@ -257,7 +258,7 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 	switch f.Header() {
 	case HEADER_LINK_REQ:
 		req, ok := f.(*LinkRequest)
-		resp := &LinkResponse{"operator"} // TODO real ID
+		resp := &LinkResponse{o.ID}
 		if !ok || req.IsError() {
 			// Should never happen
 			return SendFrame(conn, resp.SetError())
@@ -307,9 +308,15 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 			// Should never happen
 			return nil // TODO send error frame of some sort?
 		}
-		glog.V(2).Infof("Data frame: %s", req.content)
-		// TODO
-		return nil
+		glog.V(2).Infof("Data frame: %s", req.String())
+
+		l := DefaultConnectionManager.GetLink(req.receiverID)
+		if l == nil {
+			return fmt.Errorf("Failed to get link to %s", req.receiverID)
+		}
+
+		glog.V(2).Infof("Forwarding data frame: %s", req.String())
+		return SendFrame(l, req)
 	}
 	return nil
 }

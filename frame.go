@@ -37,7 +37,9 @@ type Frame interface {
 }
 
 type DataFrame struct {
-	content string
+	receiverID string
+	channelID  string
+	content    string
 }
 
 type LinkRequest struct {
@@ -74,14 +76,20 @@ type HeartbeatFrame struct{}
 // DataFrame
 func (f *DataFrame) Header() byte { return HEADER_DATA }
 func (f *DataFrame) Content() []byte {
-	return []byte(f.content)
+	return []byte(f.receiverID + "," + f.channelID + "," + f.content)
 }
 func (f *DataFrame) String() string  { return fmt.Sprintf("%#v", f) }
 func (f *DataFrame) IsError() bool   { return false } // TODO
 func (f *DataFrame) SetError() Frame { return f }
 
 func (f *DataFrame) Parse(content string) error {
-	f.content = content
+	split := strings.Split(content, ",")
+	if len(split) != 3 {
+		return fmt.Errorf("DataFrame parse error: '%s'", content)
+	}
+	f.receiverID = split[0]
+	f.channelID = split[1]
+	f.content = split[2]
 	return nil
 }
 
@@ -256,7 +264,9 @@ func GetFrame(conn net.Conn) (Frame, error) {
 
 	switch h[0] {
 	case HEADER_DATA:
-		return nil, nil
+		f := &DataFrame{}
+		err = f.Parse(content)
+		return f, err
 	case HEADER_LINK_REQ:
 		f := &LinkRequest{}
 		err = f.Parse(content)

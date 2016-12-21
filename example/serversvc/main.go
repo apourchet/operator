@@ -19,7 +19,7 @@ func main() {
 		glog.Fatal(err)
 	}
 
-	conn.Write([]byte("This is something\n"))
+	conn.Write([]byte("GET /foo HTTP/1.0\r\n\r\n"))
 
 	select {}
 }

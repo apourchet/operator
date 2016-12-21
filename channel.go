@@ -1,37 +1,38 @@
 package operator
 
 import (
-	"fmt"
+	"encoding/base64"
 	"net"
 	"time"
 
 	"github.com/golang/glog"
 )
 
-// net.Conn that will prepend all writes with HEADER_DATA and the channelID
 type Channel struct {
-	conn net.Conn
-	ID   string
+	conn       net.Conn
+	receiverID string
+	channelID  string
 }
 
-func NewChannel(conn net.Conn, ID string) net.Conn {
-	c := Channel{conn, ID}
-	glog.V(3).Infof("New channel: %s", c.ID)
+func NewChannel(conn net.Conn, receiverID string, channelID string) net.Conn {
+	c := Channel{conn, receiverID, channelID}
+	glog.V(3).Infof("New channel: %s (%s)", c.receiverID, c.channelID)
 	return &c
 }
 
 func (c *Channel) Read(b []byte) (n int, err error) {
-	glog.V(3).Infof("Channel %s reading", c.ID)
-	// TODO
+	glog.V(3).Infof("Channel %s reading", c.receiverID)
 	return c.conn.Read(b)
 }
 
 func (c *Channel) Write(b []byte) (n int, err error) {
-	glog.V(3).Infof("Channel %s writing: %s", c.ID, string(b))
-	content := []byte(fmt.Sprintf("%s,%s", c.ID, string(b)))
-	content = append([]byte{HEADER_DATA}, content...)
-	// TODO
-	return c.conn.Write(content)
+	glog.V(3).Infof("Channel %s writing: %s", c.receiverID, string(b))
+	f := &DataFrame{}
+	f.receiverID = c.receiverID
+	f.channelID = c.channelID
+	f.content = EscapeContent(b)
+	// TODO do this properly
+	return len(b), SendFrame(c.conn, f)
 }
 
 func (c *Channel) Close() error {
@@ -56,4 +57,14 @@ func (c *Channel) SetReadDeadline(t time.Time) error {
 
 func (c *Channel) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
+}
+
+func EscapeContent(content []byte) string {
+	enc := base64.StdEncoding.EncodeToString(content)
+	return enc
+}
+
+func UnescapeContent(content string) []byte {
+	dec, _ := base64.StdEncoding.DecodeString(content)
+	return dec
 }

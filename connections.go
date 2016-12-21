@@ -7,6 +7,7 @@ type ConnectionManager interface {
 	GetLink(receiverID string) *Link
 
 	SetService(serviceName string, host string)
+	GetService(serviceName string) (string, bool)
 }
 
 var DefaultConnectionManager ConnectionManager = newConnectionManager()
@@ -35,4 +36,9 @@ func (c *connectionManager) GetLink(receiverID string) *Link {
 
 func (c *connectionManager) SetService(serviceName string, host string) {
 	c.Services[serviceName] = host
+}
+
+func (c *connectionManager) GetService(serviceName string) (string, bool) {
+	serviceHost, found := c.Services[serviceName]
+	return serviceHost, found
 }
