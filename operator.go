@@ -5,6 +5,8 @@ import (
 	"net"
 	"time"
 
+	"context"
+
 	"github.com/golang/glog"
 )
 
@@ -59,6 +61,13 @@ func RegisterListener(localhost string, remotehost string, channelKey string) er
 
 func Dial(host string, receiverId string, channelKey string) (net.Conn, error) {
 	return DefaultOperator.Dial(host, receiverId, channelKey)
+}
+
+// Thin wrapper around Dial to implement http.Transport.DialContext
+func DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return DefaultOperator.Dial(addr, receiverID, channelKey)
+	}
 }
 
 // Implementation of the default operator
