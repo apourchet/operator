@@ -3,7 +3,6 @@ package operator
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"net"
 	"time"
 
@@ -37,7 +36,6 @@ func (l *Link) Tunnel(serviceKey string) chan string {
 	return channel
 }
 
-// Handles TunnelReq, TunnerRes, HB and Data
 func (l *Link) Maintain() {
 	for {
 		f, err := GetFrame(l)
@@ -49,16 +47,12 @@ func (l *Link) Maintain() {
 			return // TODO remove it from the list of links
 		}
 
-		glog.V(3).Infof("Got header: %d", f.Header())
-		glog.V(3).Infof("Got content: %s", string(f.Content()))
-
 		// Handle this frame
 		err = l.handleFrame(f)
 		if err != nil {
 			glog.Warningf("Failed to handle frame: %v", err)
 			continue
 		}
-		glog.V(3).Infof("Successfully handled frame")
 	}
 }
 
@@ -66,73 +60,78 @@ func (l *Link) handleFrame(f Frame) error {
 	switch f.Header() {
 	case HEADER_DATA:
 		req, ok := f.(*DataFrame)
-		if !ok || req.IsError() {
-			// Should never happen
-			// TODO log
-			return nil
+		if !ok {
+			return ImpossibleError()
 		}
+
 		glog.V(3).Infof("Link got data frame: %s", req.String())
 		err := l.PipeOut(req.channelID, req.content)
 		if err != nil {
 			return err
 		}
-		glog.V(3).Infof("Data frame piped successfully")
+
+		glog.V(2).Infof("Successfully handled data frame (%s)", req.channelID)
 		return nil
 
 	case HEADER_TUNNEL_REQ:
 		req, ok := f.(*TunnelRequest)
-		res := &TunnelResponse{}
-		if !ok || req.IsError() {
-			// Should never happen
-			// TODO Log
-			return nil
+		if !ok {
+			return ImpossibleError()
 		}
-		glog.V(2).Infof("Link got tunnel request: %s", req.String())
+
+		glog.V(3).Infof("Link got tunnel request: %s", req.String())
 		serviceHost, found := DefaultConnectionManager.GetService(req.serviceKey)
 		if !found {
-			return fmt.Errorf("ServiceKey not found: %s", req.serviceKey)
+			return SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
 		}
 
 		conn, err := net.Dial("tcp", serviceHost)
 		if err != nil {
-			glog.Errorf("Failed to create pipe: %v", err)
-			return err
+			glog.Errorf("Failed to dial service %s (%s): %v", req.serviceKey, req.channelID, err)
+			return SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
 		}
 
 		l.CreatePipe(req.channelID, conn)
 		l.PipeIn(req.channelID, conn)
 
+		// Create response
+		res := &TunnelResponse{}
 		res.channelID = req.channelID
+
+		glog.V(2).Infof("Successfully handled tunnel request (%s)", req.channelID)
 		return SendFrame(l, res)
 
 	case HEADER_TUNNEL_RES:
 		res, ok := f.(*TunnelResponse)
-		if !ok || res.IsError() {
-			// Should never happen
-			// TODO log
-			return fmt.Errorf("Failed to cast tunnel response")
+		if !ok {
+			return ImpossibleError()
 		}
+
 		glog.V(2).Infof("Link got tunnel response: %s", res.String())
-		if channel, found := l.TunnelsWaiting[res.channelID]; found {
-			channel <- res.channelID
-		} else {
+		channel, found := l.TunnelsWaiting[res.channelID]
+		if !found {
 			glog.Warningf("Tunnel response was found no associated waiting channel: %s", res.channelID)
+			return nil
 		}
+
+		channel <- res.channelID
+		glog.V(2).Infof("Successfully handled tunnel response (%s)", res.channelID)
 		return nil
 
 	case HEADER_HEARTBEAT:
+		glog.V(3).Infof("Link got heartbeat: %s", f.String())
 		l.LastHeartbeat = time.Now()
 		return nil
 	}
+
 	return fmt.Errorf("Unrecognized header: %d", f.Header())
 }
 
 // All data frames with this channelID going through the link
 // will be forwarded to this connection
-func (l *Link) CreatePipe(channelID string, conn net.Conn) error {
+func (l *Link) CreatePipe(channelID string, conn net.Conn) {
 	glog.V(2).Infof("Link creating pipe (%s)", channelID)
 	l.Pipes[channelID] = conn
-	return nil
 }
 
 func (l *Link) PipeIn(channelID string, conn net.Conn) {
@@ -157,7 +156,7 @@ func (l *Link) PipeIn(channelID string, conn net.Conn) {
 
 			err = SendFrame(l, frame)
 			if err != nil {
-				glog.Infof("Failed to PipeIn: %v", err)
+				glog.Errorf("Failed to PipeIn: %v", err)
 				return
 			}
 		}
@@ -167,19 +166,9 @@ func (l *Link) PipeIn(channelID string, conn net.Conn) {
 func (l *Link) PipeOut(channelID string, content string) error {
 	conn, found := l.Pipes[channelID]
 	if !found {
-		glog.Errorf("Pipe not found: %s", channelID)
+		glog.Errorf("Failed PipeOut: pipe not found: %s", channelID)
 		return fmt.Errorf("Pipe not found: %s", channelID)
 	}
 	_, err := conn.Write(UnescapeContent(content))
 	return err
-}
-
-func NewID() string {
-	rand.Seed(time.Now().UTC().UnixNano())
-	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
-	result := make([]byte, 10)
-	for i := 0; i < 10; i++ {
-		result[i] = chars[rand.Intn(len(chars))]
-	}
-	return string(result)
 }

@@ -26,7 +26,6 @@ func SendHeartbeats(conn net.Conn) error {
 			glog.Warningf("Failed to heartbeat: %v", err)
 			return err
 		}
-		glog.V(3).Infof("Sent heartbeat")
 		time.Sleep(DefaultHeartbeatManager.GetInterval())
 	}
 }

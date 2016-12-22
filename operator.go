@@ -75,12 +75,14 @@ func (o *operator) GetID() string {
 }
 
 func (o *operator) Serve(port int) error {
+	glog.V(1).Infof("Serving operator on port %d", port)
 	addr := fmt.Sprintf(":%d", port)
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {
+		glog.Errorf("Failed to serve operator: %v", err)
 		return err
 	}
-	glog.V(2).Infof("Serving on port %d", port)
+
 	for {
 		conn, err := lis.Accept()
 		if err != nil {
@@ -88,7 +90,7 @@ func (o *operator) Serve(port int) error {
 			glog.Warningf("Failed to accept connection: %v", err)
 			continue
 		}
-		glog.V(2).Infof("Accepted connection")
+		glog.V(3).Infof("Accepted connection")
 
 		go func() {
 			err := o.respond(conn)
@@ -104,43 +106,51 @@ func (o *operator) Serve(port int) error {
 
 func (o *operator) LinkAndServe(port int, host string) error {
 	receiverId := o.GetID()
-	// Link and maintain
+
+	// Try to keep link alive
 	go func() {
 		for {
+			glog.V(3).Infof("Linking to %s as %s", host, receiverId)
 			conn, err := net.Dial("tcp", host)
 			if err != nil {
 				glog.Errorf("Failed to link to %s: %v. Retrying...", host, err)
 				time.Sleep(2 * time.Second)
 				continue
 			}
-
-			glog.V(2).Infof("Linking to %s as %s", host, receiverId)
+			defer conn.Close()
 
 			// Send the link request
 			req := &LinkRequest{receiverId}
 			err = SendFrame(conn, req)
 			if err != nil {
-				glog.V(1).Infof("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
+				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 				continue
 			}
 
+			// Check the response is good
 			resp, err := GetFrame(conn)
 			if err != nil {
-				glog.V(1).Infof("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
+				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
+				continue
+			} else if resp.IsError() {
+				glog.Warningf("Broken link to %s as %s: %sRetrying...", host, receiverId, string(resp.Content()))
 				continue
 			}
 
+			// Cast to get receiverID
 			cast, ok := resp.(*LinkResponse)
-			if !ok || resp.IsError() {
-				glog.V(1).Infof("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
+			if !ok {
+				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, ImpossibleError())
 				continue
 			}
 
+			// Set and maintain that link
 			DefaultConnectionManager.SetLink(cast.receiverID, conn)
 
+			// Send heartbeats until it closes
 			err = SendHeartbeats(conn) // Blocks
-			glog.V(1).Infof("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
-			conn.Close()
+			glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
+
 			// TODO remove link
 		}
 	}()
@@ -150,14 +160,14 @@ func (o *operator) LinkAndServe(port int, host string) error {
 }
 
 func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.Conn, error) {
+	glog.V(3).Infof("Operator Dialing...")
+
 	// Dial the operator
 	conn, err := net.Dial("tcp", host)
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err
 	}
-
-	glog.V(2).Infof("Dialing operator")
 
 	// Send the request
 	req := &DialRequest{receiverID, serviceKey}
@@ -172,32 +182,24 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err
+	} else if resp.IsError() {
+		glog.Errorf("Failed to dial operator: %s", string(resp.Content()))
+		return nil, fmt.Errorf(string(resp.Content()))
 	}
-
-	glog.V(2).Infof("Got dial response frame")
 
 	// Make sure it gets a good response
 	cast, ok := resp.(*DialResponse)
-	if !ok || resp.IsError() {
-		err = fmt.Errorf("connection refused from operator")
-		glog.Errorf("Failed to dial operator: %v", err)
-		return nil, err
+	if !ok {
+		return nil, ImpossibleError()
 	}
 
-	glog.V(2).Infof("Operator returned channel ID: %s", cast.channelID)
-
-	// Create a new connection with operator
-	// conn, err = net.Dial("tcp", host)
-	// if err != nil {
-	// 	glog.Errorf("Failed to dial operator: %v", err)
-	// 	return nil, err
-	// }
-
-	// channel := NewChannel(conn, receiverID, cast.channelID)
+	// Done!
+	glog.V(3).Infof("Operator dialed. Channel ID: %s", cast.channelID)
 	return conn, nil
 }
 
 func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
+	glog.V(3).Infof("Registering operator service...")
 	// Dial the operator
 	conn, err := net.Dial("tcp", remotehost)
 	if err != nil {
@@ -218,19 +220,15 @@ func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey s
 	// Read the response frame
 	f, err := GetFrame(conn)
 	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
+		glog.Errorf("Failed to register service: %v", err)
 		return err
+	} else if f.IsError() {
+		glog.Errorf("Failed to register service: %s", string(f.Content()))
+		return fmt.Errorf(string(f.Content()))
 	}
 
-	// Make sure it gets a good response
-	resp, ok := f.(*RegisterResponse)
-	if !ok || resp.IsError() {
-		err = fmt.Errorf("connection refused from operator: '%s'", resp.String())
-		glog.Errorf("Failed to register with operator: %v", err)
-		return err
-	}
-
-	glog.Infof("Successfully registered listener: %s (%s)", serviceHost, serviceKey)
+	// Done!
+	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
 	return nil
 }
 
@@ -240,15 +238,15 @@ func (o *operator) respond(conn net.Conn) error {
 		return err
 	}
 
-	glog.V(2).Infof("Got header: %d", f.Header())
-	glog.V(2).Infof("Got content: %s", string(f.Content()))
+	if f.IsError() {
+		return fmt.Errorf("%s", string(f.Content()))
+	}
 
 	// Handle this frame
 	err = o.handleFrame(conn, f)
 	if err != nil {
 		return err
 	}
-	glog.V(2).Infof("Successfully handled frame")
 	return nil
 }
 
@@ -256,22 +254,21 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 	switch f.Header() {
 	case HEADER_LINK_REQ:
 		req, ok := f.(*LinkRequest)
-		resp := &LinkResponse{o.ID}
-		if !ok || req.IsError() {
-			// Should never happen
-			return SendFrame(conn, resp.SetError())
+		if !ok {
+			return ImpossibleError()
 		}
 
 		glog.V(2).Infof("Link request: %s", req.String())
 		DefaultConnectionManager.SetLink(req.receiverID, conn)
+
+		resp := &LinkResponse{o.ID}
 		return SendFrame(conn, resp)
 
 	case HEADER_REGISTER_REQ:
 		req, ok := f.(*RegisterRequest)
 		resp := &RegisterResponse{}
-		if !ok || req.IsError() {
-			// Should never happen
-			return SendFrame(conn, resp.SetError())
+		if !ok {
+			return ImpossibleError()
 		}
 
 		glog.V(2).Infof("Register request %s", f.String())
@@ -280,45 +277,28 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 
 	case HEADER_DIAL_REQ:
 		req, ok := f.(*DialRequest)
-		resp := &DialResponse{}
-		if !ok || req.IsError() {
-			// Should never happen
-			return SendFrame(conn, resp.SetError())
+		if !ok {
+			return ImpossibleError()
 		}
 
 		glog.V(2).Infof("Dial request to %s", f.String())
-
 		l := DefaultConnectionManager.GetLink(req.receiverID)
 		if l == nil {
-			return SendFrame(conn, resp.SetError())
+			glog.Warningf("Link not found: %s", req.receiverID)
+			return SendFrame(conn, &ErrorFrame{"Link not found"})
 		}
 
 		ID := <-l.Tunnel(req.serviceKey)
 		if ID == TUNNEL_ERR {
-			return SendFrame(conn, resp.SetError())
+			glog.Warningf("Link not found: %s", req.receiverID)
+			return SendFrame(conn, &ErrorFrame{"Service discovery failed"})
 		}
 
 		l.CreatePipe(ID, conn)
 		l.PipeIn(ID, conn)
 
-		resp.channelID = ID
+		resp := &DialResponse{ID}
 		return SendFrame(conn, resp)
-
-	case HEADER_DATA:
-		req, ok := f.(*DataFrame)
-		if !ok || req.IsError() {
-			// Should never happen
-			return nil // TODO send error frame of some sort?
-		}
-		glog.V(2).Infof("Data frame: %s", req.String())
-
-		l := DefaultConnectionManager.GetLink(req.receiverID)
-		if l == nil {
-			return fmt.Errorf("Failed to get link to %s", req.receiverID)
-		}
-
-		glog.V(2).Infof("Forwarding data frame: %s", req.String())
-		return SendFrame(l, req)
 	}
 	return nil
 }

@@ -10,6 +10,9 @@ import (
 // The header type will be contained in the first byte
 // of each line.
 const (
+	HEADER_ERROR        = 0
+	HEADER_TUNNEL_ERROR = 1
+
 	HEADER_DATA         = '0'
 	HEADER_LINK_REQ     = '1'
 	HEADER_LINK_RES     = '2'
@@ -21,9 +24,8 @@ const (
 	HEADER_TUNNEL_RES   = '8'
 	HEADER_HEARTBEAT    = '9'
 
-	DIAL_ERROR  = "ERR"
-	REGISTER_OK = "OK"
-	TUNNEL_ERR  = "ERR"
+	DIAL_ERROR = "ERR"
+	TUNNEL_ERR = "ERR"
 )
 
 // Frame interface
@@ -32,8 +34,16 @@ type Frame interface {
 	Content() []byte
 	String() string // For debugging
 	IsError() bool
-	SetError() Frame
 	Parse(string) error
+}
+
+type ErrorFrame struct {
+	message string
+}
+
+type TunnelErrorFrame struct {
+	channelID string
+	message   string
 }
 
 type DataFrame struct {
@@ -73,14 +83,44 @@ type TunnelResponse struct {
 
 type HeartbeatFrame struct{}
 
+// ErrorFrame
+func (f *ErrorFrame) Header() byte { return HEADER_ERROR }
+func (f *ErrorFrame) Content() []byte {
+	return []byte(f.message)
+}
+func (f *ErrorFrame) String() string { return fmt.Sprintf("%#v", f) }
+func (f *ErrorFrame) IsError() bool  { return true }
+
+func (f *ErrorFrame) Parse(content string) error {
+	f.message = content
+	return nil
+}
+
+// TunnelErrorFrame
+func (f *TunnelErrorFrame) Header() byte { return HEADER_TUNNEL_ERROR }
+func (f *TunnelErrorFrame) Content() []byte {
+	return []byte(f.channelID + "," + f.message)
+}
+func (f *TunnelErrorFrame) String() string { return fmt.Sprintf("%#v", f) }
+func (f *TunnelErrorFrame) IsError() bool  { return true }
+
+func (f *TunnelErrorFrame) Parse(content string) error {
+	split := strings.Split(content, ",")
+	if len(split) != 2 {
+		return fmt.Errorf("TunnelErrorFrame parse error: '%s'", content)
+	}
+	f.channelID = split[0]
+	f.message = split[1]
+	return nil
+}
+
 // DataFrame
 func (f *DataFrame) Header() byte { return HEADER_DATA }
 func (f *DataFrame) Content() []byte {
 	return []byte(f.receiverID + "," + f.channelID + "," + f.content)
 }
-func (f *DataFrame) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *DataFrame) IsError() bool   { return false } // TODO
-func (f *DataFrame) SetError() Frame { return f }
+func (f *DataFrame) String() string { return fmt.Sprintf("%#v", f) }
+func (f *DataFrame) IsError() bool  { return false }
 
 func (f *DataFrame) Parse(content string) error {
 	split := strings.Split(content, ",")
@@ -98,9 +138,8 @@ func (f *LinkRequest) Header() byte { return HEADER_LINK_REQ }
 func (f *LinkRequest) Content() []byte {
 	return []byte(f.receiverID)
 }
-func (f *LinkRequest) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *LinkRequest) IsError() bool   { return false } // TODO
-func (f *LinkRequest) SetError() Frame { return f }
+func (f *LinkRequest) String() string { return fmt.Sprintf("%#v", f) }
+func (f *LinkRequest) IsError() bool  { return false }
 
 func (f *LinkRequest) Parse(content string) error {
 	f.receiverID = content
@@ -112,9 +151,8 @@ func (f *LinkResponse) Header() byte { return HEADER_LINK_RES }
 func (f *LinkResponse) Content() []byte {
 	return []byte(f.receiverID)
 }
-func (f *LinkResponse) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *LinkResponse) IsError() bool   { return false } // TODO
-func (f *LinkResponse) SetError() Frame { return f }
+func (f *LinkResponse) String() string { return fmt.Sprintf("%#v", f) }
+func (f *LinkResponse) IsError() bool  { return false }
 
 func (f *LinkResponse) Parse(content string) error {
 	f.receiverID = content
@@ -126,9 +164,8 @@ func (f *RegisterRequest) Header() byte { return HEADER_REGISTER_REQ }
 func (f *RegisterRequest) Content() []byte {
 	return []byte(f.serviceHost + "," + f.serviceKey)
 }
-func (f *RegisterRequest) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *RegisterRequest) IsError() bool   { return false } // TODO
-func (f *RegisterRequest) SetError() Frame { return f }
+func (f *RegisterRequest) String() string { return fmt.Sprintf("%#v", f) }
+func (f *RegisterRequest) IsError() bool  { return false }
 
 func (f *RegisterRequest) Parse(content string) error {
 	split := strings.Split(content, ",")
@@ -145,7 +182,6 @@ func (f *RegisterResponse) Header() byte    { return HEADER_REGISTER_RES }
 func (f *RegisterResponse) Content() []byte { return []byte{} }
 func (f *RegisterResponse) String() string  { return fmt.Sprintf("%#v", f) }
 func (f *RegisterResponse) IsError() bool   { return false }
-func (f *RegisterResponse) SetError() Frame { return f }
 
 func (f *RegisterResponse) Parse(content string) error {
 	if content != "" {
@@ -159,9 +195,8 @@ func (f *DialRequest) Header() byte { return HEADER_DIAL_REQ }
 func (f *DialRequest) Content() []byte {
 	return []byte(f.receiverID + "," + f.serviceKey)
 }
-func (f *DialRequest) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *DialRequest) IsError() bool   { return false } // TODO
-func (f *DialRequest) SetError() Frame { return f }
+func (f *DialRequest) String() string { return fmt.Sprintf("%#v", f) }
+func (f *DialRequest) IsError() bool  { return false }
 
 func (f *DialRequest) Parse(content string) error {
 	split := strings.Split(content, ",")
@@ -179,11 +214,7 @@ func (f *DialResponse) Content() []byte {
 	return []byte(f.channelID)
 }
 func (f *DialResponse) String() string { return fmt.Sprintf("%#v", f) }
-func (f *DialResponse) IsError() bool  { return f.channelID == "ERR" } // TODO
-func (f *DialResponse) SetError() Frame {
-	f.channelID = "ERR"
-	return f
-}
+func (f *DialResponse) IsError() bool  { return false }
 
 func (f *DialResponse) Parse(content string) error {
 	f.channelID = content
@@ -195,9 +226,8 @@ func (f *TunnelRequest) Header() byte { return HEADER_TUNNEL_REQ }
 func (f *TunnelRequest) Content() []byte {
 	return []byte(f.channelID + "," + f.serviceKey)
 }
-func (f *TunnelRequest) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *TunnelRequest) IsError() bool   { return false } // TODO
-func (f *TunnelRequest) SetError() Frame { return f }
+func (f *TunnelRequest) String() string { return fmt.Sprintf("%#v", f) }
+func (f *TunnelRequest) IsError() bool  { return false }
 
 func (f *TunnelRequest) Parse(content string) error {
 	split := strings.Split(content, ",")
@@ -214,9 +244,8 @@ func (f *TunnelResponse) Header() byte { return HEADER_TUNNEL_RES }
 func (f *TunnelResponse) Content() []byte {
 	return []byte(f.channelID)
 }
-func (f *TunnelResponse) String() string  { return fmt.Sprintf("%#v", f) }
-func (f *TunnelResponse) IsError() bool   { return false } // TODO
-func (f *TunnelResponse) SetError() Frame { return f }
+func (f *TunnelResponse) String() string { return fmt.Sprintf("%#v", f) }
+func (f *TunnelResponse) IsError() bool  { return false }
 
 func (f *TunnelResponse) Parse(content string) error {
 	f.channelID = content
@@ -228,7 +257,6 @@ func (f *HeartbeatFrame) Header() byte    { return HEADER_HEARTBEAT }
 func (f *HeartbeatFrame) Content() []byte { return []byte{} }
 func (f *HeartbeatFrame) String() string  { return fmt.Sprintf("%#v", f) }
 func (f *HeartbeatFrame) IsError() bool   { return false }
-func (f *HeartbeatFrame) SetError() Frame { return f }
 
 func (f *HeartbeatFrame) Parse(content string) error {
 	if content != "" {
@@ -263,6 +291,12 @@ func GetFrame(conn net.Conn) (Frame, error) {
 	content = strings.Trim(content, "\n")
 
 	switch h[0] {
+	case HEADER_ERROR:
+		f := &ErrorFrame{}
+		return f, f.Parse(content)
+	case HEADER_TUNNEL_ERROR:
+		f := &TunnelErrorFrame{}
+		return f, f.Parse(content)
 	case HEADER_DATA:
 		f := &DataFrame{}
 		err = f.Parse(content)
