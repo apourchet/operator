@@ -22,7 +22,7 @@ func newConnectionManager() ConnectionManager {
 }
 
 func (c *connectionManager) SetLink(receiverID string, conn net.Conn) {
-	l := NewLink(conn)
+	l := NewLink(conn, receiverID)
 	c.Links[receiverID] = l
 	go l.Maintain()
 }

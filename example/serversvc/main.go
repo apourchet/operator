@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"flag"
+	"fmt"
 
 	"github.com/apourchet/operator"
 	"github.com/golang/glog"
@@ -20,6 +22,8 @@ func main() {
 	}
 
 	conn.Write([]byte("GET /foo HTTP/1.0\r\n\r\n"))
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	fmt.Println(status, err)
 
 	select {}
 }

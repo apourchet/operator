@@ -14,11 +14,12 @@ type Link struct {
 	LastHeartbeat  time.Time
 	TunnelsWaiting map[string]chan string
 	Pipes          map[string]net.Conn
+	ReceiverID     string
 	net.Conn
 }
 
-func NewLink(conn net.Conn) *Link {
-	l := Link{time.Now(), map[string]chan string{}, map[string]net.Conn{}, conn}
+func NewLink(conn net.Conn, receiverID string) *Link {
+	l := Link{time.Now(), map[string]chan string{}, map[string]net.Conn{}, receiverID, conn}
 	return &l
 }
 
@@ -71,7 +72,7 @@ func (l *Link) handleFrame(f Frame) error {
 			return nil
 		}
 		glog.V(3).Infof("Link got data frame: %s", req.String())
-		err := l.DoPipe(req.channelID, req.content)
+		err := l.PipeOut(req.channelID, req.content)
 		if err != nil {
 			return err
 		}
@@ -98,11 +99,9 @@ func (l *Link) handleFrame(f Frame) error {
 			return err
 		}
 
-		err = l.CreatePipe(req.channelID, conn)
-		if err != nil {
-			// TODO send error
-			return err
-		}
+		l.CreatePipe(req.channelID, conn)
+		l.PipeIn(req.channelID, conn)
+
 		res.channelID = req.channelID
 		return SendFrame(l, res)
 
@@ -128,15 +127,47 @@ func (l *Link) handleFrame(f Frame) error {
 	return fmt.Errorf("Unrecognized header: %d", f.Header())
 }
 
+// All data frames with this channelID going through the link
+// will be forwarded to this connection
 func (l *Link) CreatePipe(channelID string, conn net.Conn) error {
 	glog.V(2).Infof("Link creating pipe (%s)", channelID)
 	l.Pipes[channelID] = conn
 	return nil
 }
 
-func (l *Link) DoPipe(channelID string, content string) error {
+func (l *Link) PipeIn(channelID string, conn net.Conn) {
+	buf := make([]byte, 4096)
+	frame := &DataFrame{}
+	go func() {
+		defer conn.Close()
+		for {
+			n, err := io.ReadAtLeast(conn, buf, 1)
+			if err == io.EOF {
+				glog.Warningf("Pipe closed (%s)", channelID)
+				l.Pipes[channelID] = nil
+				return
+			} else if err != nil {
+				glog.Warningf("Pipe error (%s): %v", channelID, err)
+				return
+			}
+			glog.V(3).Infof("Read %d bytes from pipe", n)
+			frame.receiverID = l.ReceiverID
+			frame.channelID = channelID
+			frame.content = EscapeContent(buf[:n])
+
+			err = SendFrame(l, frame)
+			if err != nil {
+				glog.Infof("Failed to PipeIn: %v", err)
+				return
+			}
+		}
+	}()
+}
+
+func (l *Link) PipeOut(channelID string, content string) error {
 	conn, found := l.Pipes[channelID]
 	if !found {
+		glog.Errorf("Pipe not found: %s", channelID)
 		return fmt.Errorf("Pipe not found: %s", channelID)
 	}
 	_, err := conn.Write(UnescapeContent(content))

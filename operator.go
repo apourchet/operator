@@ -91,10 +91,9 @@ func (o *operator) Serve(port int) error {
 		glog.V(2).Infof("Accepted connection")
 
 		go func() {
-			err = o.respond(conn)
+			err := o.respond(conn)
 			if err != nil {
 				glog.Warningf("Failed to respond to connection: %v", err)
-				conn.Close()
 				return
 			}
 			glog.V(2).Infof("Successfully handled connection")
@@ -157,7 +156,6 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err
 	}
-	defer conn.Close()
 
 	glog.V(2).Infof("Dialing operator")
 
@@ -189,14 +187,14 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 	glog.V(2).Infof("Operator returned channel ID: %s", cast.channelID)
 
 	// Create a new connection with operator
-	conn, err = net.Dial("tcp", host)
-	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
-		return nil, err
-	}
+	// conn, err = net.Dial("tcp", host)
+	// if err != nil {
+	// 	glog.Errorf("Failed to dial operator: %v", err)
+	// 	return nil, err
+	// }
 
-	channel := NewChannel(conn, receiverID, cast.channelID)
-	return channel, nil
+	// channel := NewChannel(conn, receiverID, cast.channelID)
+	return conn, nil
 }
 
 func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
@@ -299,6 +297,10 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 		if ID == TUNNEL_ERR {
 			return SendFrame(conn, resp.SetError())
 		}
+
+		l.CreatePipe(ID, conn)
+		l.PipeIn(ID, conn)
+
 		resp.channelID = ID
 		return SendFrame(conn, resp)
 

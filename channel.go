@@ -12,10 +12,11 @@ type Channel struct {
 	conn       net.Conn
 	receiverID string
 	channelID  string
+	hasWritten bool
 }
 
 func NewChannel(conn net.Conn, receiverID string, channelID string) net.Conn {
-	c := Channel{conn, receiverID, channelID}
+	c := Channel{conn, receiverID, channelID, false}
 	glog.V(3).Infof("New channel: %s (%s)", c.receiverID, c.channelID)
 	return &c
 }
@@ -27,12 +28,16 @@ func (c *Channel) Read(b []byte) (n int, err error) {
 
 func (c *Channel) Write(b []byte) (n int, err error) {
 	glog.V(3).Infof("Channel %s writing: %s", c.receiverID, string(b))
-	f := &DataFrame{}
-	f.receiverID = c.receiverID
-	f.channelID = c.channelID
-	f.content = EscapeContent(b)
-	// TODO do this properly
-	return len(b), SendFrame(c.conn, f)
+	if !c.hasWritten {
+		c.hasWritten = true
+		f := &DataFrame{}
+		f.receiverID = c.receiverID
+		f.channelID = c.channelID
+		f.content = EscapeContent(b)
+		// TODO do this properly
+		return len(b), SendFrame(c.conn, f)
+	}
+	return c.conn.Write(b)
 }
 
 func (c *Channel) Close() error {
