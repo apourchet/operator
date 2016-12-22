@@ -44,7 +44,8 @@ func (l *Link) Maintain() {
 			continue
 		} else if err == io.EOF {
 			glog.Errorf("Link permanently closed: EOF")
-			return // TODO remove it from the list of links
+			DefaultConnectionManager.RemoveLink(l.ReceiverID)
+			return
 		}
 
 		// Handle this frame

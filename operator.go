@@ -151,7 +151,7 @@ func (o *operator) LinkAndServe(port int, host string) error {
 			err = SendHeartbeats(conn) // Blocks
 			glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 
-			// TODO remove link
+			DefaultConnectionManager.RemoveLink(cast.receiverID)
 		}
 	}()
 
