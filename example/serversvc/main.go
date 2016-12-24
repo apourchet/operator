@@ -21,16 +21,22 @@ func main() {
 		DialContext: operator.DialContext("phone1", "key1"),
 	}
 
-	client := &http.Client{Transport: tr}
-	resp, err := client.Get("http://localhost:10000/foo")
-	if err != nil {
-		glog.Fatal(err)
-	}
-	defer resp.Body.Close()
+	for i := 0; i < 10; i++ {
+		client := &http.Client{Transport: tr}
+		resp, err := client.Get("http://localhost:10000/foo")
+		if err != nil {
+			glog.Fatal(err)
+		}
+		defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		glog.Fatal(err)
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			glog.Fatal(err)
+		}
+		if string(body) != "bar" {
+			fmt.Println("ERROR", string(body))
+		} else {
+			fmt.Println("Success", i)
+		}
 	}
-	fmt.Println("Response: ", string(body))
 }

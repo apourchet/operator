@@ -209,43 +209,34 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 
 func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
 	glog.V(3).Infof("Registering operator service...")
-	go func() {
-		for {
-			// Dial the operator
-			conn, err := net.Dial("tcp", remotehost)
-			if err != nil {
-				glog.Errorf("Failed to dial operator: %v", err)
-				time.Sleep(5 * time.Second)
-				continue
-			}
+	// Dial the operator
+	conn, err := net.Dial("tcp", remotehost)
+	if err != nil {
+		glog.Errorf("Failed to dial operator: %v", err)
+		return err
+	}
 
-			// Send register request
-			req := &RegisterRequest{serviceHost, serviceKey}
-			err = SendFrame(conn, req)
-			if err != nil {
-				glog.Errorf("Failed to register with operator: %v", err)
-				time.Sleep(2 * time.Second)
-				continue
-			}
+	// Send register request
+	req := &RegisterRequest{serviceHost, serviceKey}
+	err = SendFrame(conn, req)
+	if err != nil {
+		glog.Errorf("Failed to register with operator: %v", err)
+		return err
+	}
 
-			// Read the response frame
-			f, err := GetFrame(conn)
-			if err != nil {
-				glog.Errorf("Failed to register service: %v", err)
-				time.Sleep(2 * time.Second)
-				continue
-			} else if f.IsError() {
-				glog.Errorf("Failed to register service: %s", string(f.Content()))
-				time.Sleep(2 * time.Second)
-				continue
-			}
+	// Read the response frame
+	f, err := GetFrame(conn)
+	if err != nil {
+		glog.Errorf("Failed to register service: %v", err)
+		return err
+	} else if f.IsError() {
+		glog.Errorf("Failed to register service: %s", string(f.Content()))
+		return err
+	}
 
-			// Done!
-			glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
-			conn.Close()
-			time.Sleep(10 * time.Second)
-		}
-	}()
+	// Done!
+	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
+	conn.Close()
 
 	return nil
 }
