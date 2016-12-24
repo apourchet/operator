@@ -123,6 +123,21 @@ func (l *Link) handleFrame(f Frame) error {
 		glog.V(3).Infof("Link got heartbeat: %s", f.String())
 		l.LastHeartbeat = time.Now()
 		return nil
+
+	case HEADER_TUNNEL_ERROR:
+		res, ok := f.(*TunnelErrorFrame)
+		if !ok {
+			return ImpossibleError()
+		}
+		glog.V(2).Infof("Link got tunnel error: %s", res.String())
+
+		channel, found := l.TunnelsWaiting[res.channelID]
+		if !found {
+			glog.Warningf("Tunnel response was found no associated waiting channel: %s", res.channelID)
+			return nil
+		}
+		channel <- TUNNEL_ERR
+		return nil
 	}
 
 	return fmt.Errorf("Unrecognized header: %d", f.Header())

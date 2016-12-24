@@ -24,6 +24,7 @@ func main() {
 
 	// Start that service
 	http.HandleFunc("/foo", func(w http.ResponseWriter, r *http.Request) {
+		defer r.Body.Close()
 		fmt.Println("HERE!")
 		fmt.Fprintf(w, "bar")
 	})
