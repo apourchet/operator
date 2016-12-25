@@ -23,9 +23,6 @@ const (
 	HEADER_TUNNEL_REQ   = '7'
 	HEADER_TUNNEL_RES   = '8'
 	HEADER_HEARTBEAT    = '9'
-
-	DIAL_ERROR = "ERR"
-	TUNNEL_ERR = "ERR"
 )
 
 // Frame interface
