@@ -259,6 +259,44 @@ func (o *operator) respond(conn net.Conn) error {
 	return nil
 }
 
+func (o *operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
+	glog.V(2).Infof("Link request: %s", req.String())
+	DefaultConnectionManager.SetLink(req.receiverID, conn)
+
+	resp := &LinkResponse{o.ID}
+	return SendFrame(conn, resp)
+}
+
+func (o *operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
+	glog.V(2).Infof("Register request %s", req.String())
+	DefaultConnectionManager.SetService(req.serviceKey, req.serviceHost)
+
+	resp := &RegisterResponse{}
+	return SendFrame(conn, resp)
+}
+
+func (o *operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
+	glog.V(2).Infof("Dial request to %s", req.String())
+	l := DefaultConnectionManager.GetLink(req.receiverID)
+	if l == nil {
+		glog.Warningf("Link not found: %s", req.receiverID)
+		return SendFrame(conn, &ErrorFrame{"Link not found"})
+	}
+
+	frame := <-l.Tunnel(req.serviceKey)
+	res, ok := frame.(*DialResponse)
+	if frame.IsError() || !ok {
+		glog.Warningf("Dial error received from tunnel: %v", string(frame.Content()))
+		return SendFrame(conn, &ErrorFrame{"Service discovery failed: " + string(frame.Content())})
+	}
+
+	l.CreatePipe(res.channelID, conn)
+	l.PipeIn(res.channelID, conn)
+
+	resp := &DialResponse{res.channelID}
+	return SendFrame(conn, resp)
+}
+
 func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 	switch f.Header() {
 	case HEADER_LINK_REQ:
@@ -266,48 +304,22 @@ func (o *operator) handleFrame(conn net.Conn, f Frame) error {
 		if !ok {
 			return ImpossibleError()
 		}
-
-		glog.V(2).Infof("Link request: %s", req.String())
-		DefaultConnectionManager.SetLink(req.receiverID, conn)
-
-		resp := &LinkResponse{o.ID}
-		return SendFrame(conn, resp)
+		return o.handleLinkRequest(conn, req)
 
 	case HEADER_REGISTER_REQ:
 		req, ok := f.(*RegisterRequest)
-		resp := &RegisterResponse{}
 		if !ok {
 			return ImpossibleError()
 		}
-
-		glog.V(2).Infof("Register request %s", f.String())
-		DefaultConnectionManager.SetService(req.serviceKey, req.serviceHost)
-		return SendFrame(conn, resp)
+		return o.handleRegisterRequest(conn, req)
 
 	case HEADER_DIAL_REQ:
 		req, ok := f.(*DialRequest)
 		if !ok {
 			return ImpossibleError()
 		}
-
-		glog.V(2).Infof("Dial request to %s", f.String())
-		l := DefaultConnectionManager.GetLink(req.receiverID)
-		if l == nil {
-			glog.Warningf("Link not found: %s", req.receiverID)
-			return SendFrame(conn, &ErrorFrame{"Link not found"})
-		}
-
-		ID := <-l.Tunnel(req.serviceKey)
-		if ID == TUNNEL_ERR {
-			glog.Warningf("Link not found: %s", req.receiverID)
-			return SendFrame(conn, &ErrorFrame{"Service discovery failed"})
-		}
-
-		l.CreatePipe(ID, conn)
-		l.PipeIn(ID, conn)
-
-		resp := &DialResponse{ID}
-		return SendFrame(conn, resp)
+		return o.handleDialRequest(conn, req)
 	}
-	return nil
+
+	return fmt.Errorf("Unrecognized header: %d", f.Header())
 }
