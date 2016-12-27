@@ -79,7 +79,11 @@ func (l *Link) handleDataFrame(data *DataFrame) error {
 
 func (l *Link) handleTunnelRequest(req *TunnelRequest) error {
 	glog.V(3).Infof("Link got tunnel request: %s", req.String())
-	serviceHost, found := DefaultConnectionManager.GetService(req.serviceKey)
+	serviceHost, found, err := DefaultServiceResolver.GetService(req.serviceKey)
+	if err != nil {
+		return SendFrame(l, &TunnelErrorFrame{req.channelID, err.Error()})
+	}
+
 	if !found {
 		return SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
 	}

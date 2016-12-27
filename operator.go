@@ -30,6 +30,7 @@ func NewOperator(receiverID string) *Operator {
 	o.ReceiverID = receiverID
 	o.OperatorResolver = DefaultOperatorResolver
 	o.ConnectionManager = DefaultConnectionManager
+	o.ServiceResolver = DefaultServiceResolver
 	return o
 }
 
@@ -37,6 +38,7 @@ type Operator struct {
 	ReceiverID        string
 	ConnectionManager ConnectionManager
 	OperatorResolver  OperatorResolver
+	ServiceResolver   ServiceResolver
 }
 
 func (o *Operator) SetID(id string) *Operator {
@@ -170,7 +172,7 @@ func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 
 func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
 	glog.V(2).Infof("Register request %s", req.String())
-	o.ConnectionManager.SetService(req.serviceKey, req.serviceHost)
+	o.ServiceResolver.SetService(req.serviceKey, req.serviceHost)
 
 	resp := &RegisterResponse{}
 	return SendFrame(conn, resp)

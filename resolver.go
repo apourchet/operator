@@ -30,3 +30,29 @@ func (o *operatorManager) SetOperator(receiverID string, host string) error {
 	o.operators[receiverID] = host
 	return nil
 }
+
+type ServiceResolver interface {
+	SetService(serviceName string, host string) error
+	GetService(serviceName string) (string, bool, error)
+}
+
+var DefaultServiceResolver ServiceResolver = nil
+
+func init() {
+	sm := &MemoryServiceResolver{map[string]string{}}
+	DefaultServiceResolver = sm
+}
+
+type MemoryServiceResolver struct {
+	Services map[string]string // map from service key to service address
+}
+
+func (r *MemoryServiceResolver) SetService(serviceName string, host string) error {
+	r.Services[serviceName] = host
+	return nil
+}
+
+func (r *MemoryServiceResolver) GetService(serviceName string) (string, bool, error) {
+	serviceHost, found := r.Services[serviceName]
+	return serviceHost, found, nil
+}
