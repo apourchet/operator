@@ -10,9 +10,9 @@ import (
 	"github.com/golang/glog"
 )
 
-type Operator interface {
-	// Sets the ID of the operator
-	SetID(string)
+type OperatorInterface interface {
+	// Sets the ID of the operator and returns itself
+	SetID(string) OperatorInterface
 
 	// Returns the ID of the operator
 	GetID() string
@@ -24,66 +24,44 @@ type Operator interface {
 	// Creates the bytestream client. Every connection made
 	// to that local port will get forwarded to the operator node
 	// at the host destination
-	LinkAndServe(port int, host string) error
+	LinkAndServe(port int, operatorAddr string) error
 
 	// Creates a listener that will accept tcp connections
 	// from the Dial call with the same channelKey
-	RegisterListener(localhost string, remotehost string, channelKey string) error
+	RegisterListener(serviceAddr string, operatorAddr string, channelKey string) error
 
 	// Creates a short-lived tcp connection between the server and the
 	// operator node. Everything that goes through this connection
 	// will be forwarded to the listener on the other end
 	// This will be used by applications that wish to use the bytestream system
 	// provided by operator
-	Dial(host string, receiverId string, channelKey string) (net.Conn, error)
+	Dial(receiverId string, channelKey string) (net.Conn, error)
 }
 
-// This can be overridden for mocking and stubbing
-var DefaultOperator Operator = nil
-
-// Set the default operator on init
-func init() {
-	o := &operator{"operator"}
-	DefaultOperator = o
+func NewOperator() *Operator {
+	o := &Operator{}
+	o.ReceiverID = "operator"
+	o.OperatorResolver = DefaultOperatorResolver
+	o.ConnectionManager = DefaultConnectionManager
+	return o
 }
 
-func Serve(port int) error {
-	return DefaultOperator.Serve(port)
+type Operator struct {
+	ReceiverID        string
+	ConnectionManager ConnectionManager
+	OperatorResolver  OperatorResolver
 }
 
-func LinkAndServe(port int, host string) error {
-	return DefaultOperator.LinkAndServe(port, host)
+func (o *Operator) SetID(id string) *Operator {
+	o.ReceiverID = id
+	return o
 }
 
-func RegisterListener(localhost string, remotehost string, channelKey string) error {
-	return DefaultOperator.RegisterListener(localhost, remotehost, channelKey)
+func (o *Operator) GetID() string {
+	return o.ReceiverID
 }
 
-func Dial(host string, receiverId string, channelKey string) (net.Conn, error) {
-	return DefaultOperator.Dial(host, receiverId, channelKey)
-}
-
-// Thin wrapper around Dial to implement http.Transport.DialContext
-func DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return DefaultOperator.Dial(addr, receiverID, channelKey)
-	}
-}
-
-// Implementation of the default operator
-type operator struct {
-	ID string
-}
-
-func (o *operator) SetID(id string) {
-	o.ID = id
-}
-
-func (o *operator) GetID() string {
-	return o.ID
-}
-
-func (o *operator) Serve(port int) error {
+func (o *Operator) Serve(port int) error {
 	glog.V(1).Infof("Serving operator on port %d", port)
 	addr := fmt.Sprintf(":%d", port)
 	lis, err := net.Listen("tcp", addr)
@@ -113,7 +91,7 @@ func (o *operator) Serve(port int) error {
 	return nil
 }
 
-func (o *operator) LinkAndServe(port int, host string) error {
+func (o *Operator) LinkAndServe(port int, host string) error {
 	receiverId := o.GetID()
 
 	// Try to keep link alive
@@ -154,22 +132,30 @@ func (o *operator) LinkAndServe(port int, host string) error {
 			}
 
 			// Set and maintain that link
-			DefaultConnectionManager.SetLink(cast.receiverID, conn)
+			o.ConnectionManager.SetLink(cast.receiverID, conn)
 
 			// Send heartbeats until it closes
 			err = SendHeartbeats(conn) // Blocks
 			glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 
-			DefaultConnectionManager.RemoveLink(cast.receiverID)
+			o.ConnectionManager.RemoveLink(cast.receiverID)
 		}
 	}()
 
 	// Serve
-	return Serve(port)
+	return o.Serve(port)
 }
 
-func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.Conn, error) {
+func (o *Operator) Dial(receiverID string, serviceKey string) (net.Conn, error) {
 	glog.V(3).Infof("Operator Dialing...")
+
+	// Use the OperatorResolver to find the right operator
+	host, err := o.OperatorResolver.ResolveOperator(receiverID)
+	if err != nil {
+		glog.Errorf("OperatorResolver error: %v", err)
+		return nil, err
+	}
+	glog.V(1).Infof("Resolved receiverID to operator at: %s", host)
 
 	// Dial the operator
 	conn, err := net.Dial("tcp", host)
@@ -207,7 +193,7 @@ func (o *operator) Dial(host string, receiverID string, serviceKey string) (net.
 	return conn, nil
 }
 
-func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
+func (o *Operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
 	glog.V(3).Infof("Registering operator service...")
 	// Dial the operator
 	conn, err := net.Dial("tcp", remotehost)
@@ -241,7 +227,13 @@ func (o *operator) RegisterListener(serviceHost, remotehost string, serviceKey s
 	return nil
 }
 
-func (o *operator) respond(conn net.Conn) error {
+func (o *Operator) DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return o.Dial(receiverID, channelKey)
+	}
+}
+
+func (o *Operator) respond(conn net.Conn) error {
 	f, err := GetFrame(conn)
 	if err != nil {
 		return err
@@ -259,25 +251,25 @@ func (o *operator) respond(conn net.Conn) error {
 	return nil
 }
 
-func (o *operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
+func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 	glog.V(2).Infof("Link request: %s", req.String())
-	DefaultConnectionManager.SetLink(req.receiverID, conn)
+	o.ConnectionManager.SetLink(req.receiverID, conn)
 
-	resp := &LinkResponse{o.ID}
+	resp := &LinkResponse{o.GetID()}
 	return SendFrame(conn, resp)
 }
 
-func (o *operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
+func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
 	glog.V(2).Infof("Register request %s", req.String())
-	DefaultConnectionManager.SetService(req.serviceKey, req.serviceHost)
+	o.ConnectionManager.SetService(req.serviceKey, req.serviceHost)
 
 	resp := &RegisterResponse{}
 	return SendFrame(conn, resp)
 }
 
-func (o *operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
+func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	glog.V(2).Infof("Dial request to %s", req.String())
-	l := DefaultConnectionManager.GetLink(req.receiverID)
+	l := o.ConnectionManager.GetLink(req.receiverID)
 	if l == nil {
 		glog.Warningf("Link not found: %s", req.receiverID)
 		return SendFrame(conn, &ErrorFrame{"Link not found"})
@@ -297,7 +289,7 @@ func (o *operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	return SendFrame(conn, resp)
 }
 
-func (o *operator) handleFrame(conn net.Conn, f Frame) error {
+func (o *Operator) handleFrame(conn net.Conn, f Frame) error {
 	switch f.Header() {
 	case HEADER_LINK_REQ:
 		req, ok := f.(*LinkRequest)

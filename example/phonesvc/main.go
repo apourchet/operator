@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	// Register listener to server
-	err := operator.RegisterListener("localhost:10002", "localhost:10001", "key1")
+	err := operator.NewOperator().RegisterListener("localhost:10002", "localhost:10001", "key1")
 	if err != nil {
 		glog.Fatal(err)
 	}
