@@ -157,10 +157,15 @@ func (o *Operator) respond(conn net.Conn) error {
 
 func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 	glog.V(2).Infof("Link request: %s", req.String())
-	o.ConnectionManager.SetLink(req.receiverID, conn)
 
 	resp := &LinkResponse{o.GetID()}
-	return SendFrame(conn, resp)
+	err := SendFrame(conn, resp)
+	if err != nil {
+		return err
+	}
+	o.ConnectionManager.SetLink(req.receiverID, conn)
+
+	return o.OperatorResolver.SetOperator(req.receiverID, "TODO-host.com")
 }
 
 func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
@@ -173,10 +178,10 @@ func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) er
 
 func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	glog.V(2).Infof("Dial request to %s", req.String())
-	l := o.ConnectionManager.GetLink(req.receiverID)
-	if l == nil {
-		glog.Warningf("Link not found: %s", req.receiverID)
-		return SendFrame(conn, &ErrorFrame{"Link not found"})
+	l, err := o.ConnectionManager.GetLink(req.receiverID)
+	if err != nil {
+		glog.Warningf("Failed to get link %s: %v", req.receiverID, err)
+		return SendFrame(conn, &ErrorFrame{err.Error()})
 	}
 
 	frame := <-l.Tunnel(req.serviceKey)
