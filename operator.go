@@ -5,8 +5,6 @@ import (
 	"net"
 	"time"
 
-	"context"
-
 	"github.com/golang/glog"
 )
 
@@ -25,22 +23,11 @@ type OperatorInterface interface {
 	// to that local port will get forwarded to the operator node
 	// at the host destination
 	LinkAndServe(port int, operatorAddr string) error
-
-	// Creates a listener that will accept tcp connections
-	// from the Dial call with the same channelKey
-	RegisterListener(serviceAddr string, operatorAddr string, channelKey string) error
-
-	// Creates a short-lived tcp connection between the server and the
-	// operator node. Everything that goes through this connection
-	// will be forwarded to the listener on the other end
-	// This will be used by applications that wish to use the bytestream system
-	// provided by operator
-	Dial(receiverId string, channelKey string) (net.Conn, error)
 }
 
-func NewOperator() *Operator {
+func NewOperator(receiverID string) *Operator {
 	o := &Operator{}
-	o.ReceiverID = "operator"
+	o.ReceiverID = receiverID
 	o.OperatorResolver = DefaultOperatorResolver
 	o.ConnectionManager = DefaultConnectionManager
 	return o
@@ -133,6 +120,9 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 
 			// Set and maintain that link
 			o.ConnectionManager.SetLink(cast.receiverID, conn)
+			o.OperatorResolver.SetOperator(cast.receiverID, "TODO-host.com")
+
+			glog.V(2).Infof("Linked to %s as %s", cast.receiverID, receiverId)
 
 			// Send heartbeats until it closes
 			err = SendHeartbeats(conn) // Blocks
@@ -146,94 +136,8 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 	return o.Serve(port)
 }
 
-func (o *Operator) Dial(receiverID string, serviceKey string) (net.Conn, error) {
-	glog.V(3).Infof("Operator Dialing...")
-
-	// Use the OperatorResolver to find the right operator
-	host, err := o.OperatorResolver.ResolveOperator(receiverID)
-	if err != nil {
-		glog.Errorf("OperatorResolver error: %v", err)
-		return nil, err
-	}
-	glog.V(1).Infof("Resolved receiverID to operator at: %s", host)
-
-	// Dial the operator
-	conn, err := net.Dial("tcp", host)
-	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
-		return nil, err
-	}
-
-	// Send the request
-	req := &DialRequest{receiverID, serviceKey}
-	err = SendFrame(conn, req)
-	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
-		return nil, err
-	}
-
-	// Read the response frame
-	resp, err := GetFrame(conn)
-	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
-		return nil, err
-	} else if resp.IsError() {
-		glog.Errorf("Failed to dial operator: %s", string(resp.Content()))
-		return nil, fmt.Errorf(string(resp.Content()))
-	}
-
-	// Make sure it gets a good response
-	cast, ok := resp.(*DialResponse)
-	if !ok {
-		return nil, ImpossibleError()
-	}
-
-	// Done!
-	glog.V(3).Infof("Operator dialed. Channel ID: %s", cast.channelID)
-	return conn, nil
-}
-
-func (o *Operator) RegisterListener(serviceHost, remotehost string, serviceKey string) error {
-	glog.V(3).Infof("Registering operator service...")
-	// Dial the operator
-	conn, err := net.Dial("tcp", remotehost)
-	if err != nil {
-		glog.Errorf("Failed to dial operator: %v", err)
-		return err
-	}
-
-	// Send register request
-	req := &RegisterRequest{serviceHost, serviceKey}
-	err = SendFrame(conn, req)
-	if err != nil {
-		glog.Errorf("Failed to register with operator: %v", err)
-		return err
-	}
-
-	// Read the response frame
-	f, err := GetFrame(conn)
-	if err != nil {
-		glog.Errorf("Failed to register service: %v", err)
-		return err
-	} else if f.IsError() {
-		glog.Errorf("Failed to register service: %s", string(f.Content()))
-		return err
-	}
-
-	// Done!
-	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
-	conn.Close()
-
-	return nil
-}
-
-func (o *Operator) DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return o.Dial(receiverID, channelKey)
-	}
-}
-
 func (o *Operator) respond(conn net.Conn) error {
+	// Get the outstanding frame from that connection
 	f, err := GetFrame(conn)
 	if err != nil {
 		return err
@@ -314,4 +218,41 @@ func (o *Operator) handleFrame(conn net.Conn, f Frame) error {
 	}
 
 	return fmt.Errorf("Unrecognized header: %d", f.Header())
+}
+
+// Creates a listener that will accept tcp connections
+// from the Dial call with the same channelKey
+func RegisterListener(serviceHost, remotehost string, serviceKey string) error {
+	glog.V(3).Infof("Registering operator service...")
+
+	// Dial the operator
+	conn, err := net.Dial("tcp", remotehost)
+	if err != nil {
+		glog.Errorf("Failed to dial operator: %v", err)
+		return err
+	}
+
+	// Send register request
+	req := &RegisterRequest{serviceHost, serviceKey}
+	err = SendFrame(conn, req)
+	if err != nil {
+		glog.Errorf("Failed to register with operator: %v", err)
+		return err
+	}
+
+	// Read the response frame
+	f, err := GetFrame(conn)
+	if err != nil {
+		glog.Errorf("Failed to register service: %v", err)
+		return err
+	} else if f.IsError() {
+		glog.Errorf("Failed to register service: %s", string(f.Content()))
+		return err
+	}
+
+	// Done!
+	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
+	conn.Close()
+
+	return nil
 }

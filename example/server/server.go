@@ -13,7 +13,7 @@ func init() {
 
 func main() {
 	flag.Parse()
-	err := operator.NewOperator().SetID("server1").Serve(10000)
+	err := operator.NewOperator("server1").Serve(10000)
 	if err != nil {
 		glog.Fatal(err)
 	}

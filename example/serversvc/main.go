@@ -17,10 +17,10 @@ func init() {
 func main() {
 	flag.Parse()
 
-	optr := operator.NewOperator()
-	optr.OperatorResolver.SetOperator("phone1", "localhost:10000")
+	dialer := operator.NewDialer(nil)
+	dialer.OperatorResolver.SetOperator("phone1", "localhost:10000")
 	tr := &http.Transport{
-		DialContext: optr.DialContext("phone1", "key1"),
+		DialContext: dialer.DialContext("phone1", "key1"),
 	}
 
 	for i := 0; i < 10; i++ {

@@ -15,7 +15,7 @@ func main() {
 	flag.Parse()
 
 	// Link from private network to internal servers
-	err := operator.NewOperator().SetID("phone1").LinkAndServe(10001, "localhost:10000")
+	err := operator.NewOperator("phone1").LinkAndServe(10001, "localhost:10000")
 	if err != nil {
 		glog.Fatal(err)
 	}
