@@ -3,6 +3,7 @@ package operator
 import (
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/golang/glog"
 
@@ -15,10 +16,10 @@ type DialerInterface interface {
 	// will be forwarded to the listener on the other end
 	// This will be used by applications that wish to use the bytestream system
 	// provided by operator
-	Dial(receiverId string, channelKey string) (net.Conn, error)
+	Dial(receiverId string, serviceKey string) (net.Conn, error)
 
 	// For ease of use in the net.http package
-	DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error)
+	DialContext() func(context.Context, string, string) (net.Conn, error)
 }
 
 type Dialer struct {
@@ -34,7 +35,7 @@ func NewDialer(resolver OperatorResolver) *Dialer {
 }
 
 func (d *Dialer) Dial(receiverID string, serviceKey string) (net.Conn, error) {
-	glog.V(3).Infof("Operator Dialing...")
+	glog.V(3).Infof("Operator Dialing: %s.%s", receiverID, serviceKey)
 
 	// Use the OperatorResolver to find the right operator
 	host, err := d.OperatorResolver.ResolveOperator(receiverID)
@@ -80,8 +81,20 @@ func (d *Dialer) Dial(receiverID string, serviceKey string) (net.Conn, error) {
 	return conn, nil
 }
 
-func (dialer *Dialer) DialContext(receiverID string, channelKey string) func(context.Context, string, string) (net.Conn, error) {
-	return func(ctx context.Context, network, _ string) (net.Conn, error) {
-		return dialer.Dial(receiverID, channelKey)
+func (dialer *Dialer) DialContext() func(context.Context, string, string) (net.Conn, error) {
+	return func(ctx context.Context, _, address string) (net.Conn, error) {
+		// Remove port number, its meaningless for this dialer
+		portSplit := strings.SplitN(address, ":", 2)
+		if len(portSplit) < 1 {
+			return nil, fmt.Errorf("Address poorly formatted")
+		}
+		address = portSplit[0]
+
+		// Split on the period. Format is <receiverID>.<serviceKey>
+		split := strings.SplitN(address, ".", 2)
+		if len(split) != 2 {
+			return nil, fmt.Errorf("Wrong format for operator dialer. Must be <receiverID>.<serviceKey>")
+		}
+		return dialer.Dial(split[0], split[1])
 	}
 }

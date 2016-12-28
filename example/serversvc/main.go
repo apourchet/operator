@@ -19,13 +19,11 @@ func main() {
 
 	dialer := operator.NewDialer(nil)
 	dialer.OperatorResolver.SetOperator("phone1", "localhost:10000")
-	tr := &http.Transport{
-		DialContext: dialer.DialContext("phone1", "key1"),
-	}
+	tr := &http.Transport{DialContext: dialer.DialContext()}
 
 	for i := 0; i < 10; i++ {
 		client := &http.Client{Transport: tr}
-		resp, err := client.Get("http://localhost:10000/foo")
+		resp, err := client.Get("http://phone1.key1/foo")
 		if err != nil {
 			glog.Fatal(err)
 		}

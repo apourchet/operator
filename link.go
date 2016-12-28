@@ -73,7 +73,7 @@ func (l *Link) handleDataFrame(data *DataFrame) error {
 		return err
 	}
 
-	glog.V(2).Infof("Successfully handled data frame (%s)", data.channelID)
+	glog.V(3).Infof("Successfully handled data frame (%s)", data.channelID)
 	return nil
 }
 

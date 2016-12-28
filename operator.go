@@ -233,18 +233,18 @@ func (o *Operator) handleFrame(conn net.Conn, f Frame) error {
 
 // Creates a listener that will accept tcp connections
 // from the Dial call with the same channelKey
-func RegisterListener(serviceHost, remotehost string, serviceKey string) error {
+func RegisterService(operatorAddr, serviceKey, serviceAddr string) error {
 	glog.V(3).Infof("Registering operator service...")
 
 	// Dial the operator
-	conn, err := net.Dial("tcp", remotehost)
+	conn, err := net.Dial("tcp", operatorAddr)
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return err
 	}
 
 	// Send register request
-	req := &RegisterRequest{serviceHost, serviceKey}
+	req := &RegisterRequest{serviceAddr, serviceKey}
 	_, err = SendFrame(conn, req)
 	if err != nil {
 		glog.Errorf("Failed to register with operator: %v", err)
@@ -262,7 +262,7 @@ func RegisterListener(serviceHost, remotehost string, serviceKey string) error {
 	}
 
 	// Done!
-	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceHost, serviceKey)
+	glog.V(2).Infof("Successfully registered service: %s (%s)", serviceAddr, serviceKey)
 	conn.Close()
 
 	return nil

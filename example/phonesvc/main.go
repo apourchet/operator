@@ -17,7 +17,7 @@ func main() {
 	flag.Parse()
 
 	// Register listener to server
-	err := operator.RegisterListener("localhost:10002", "localhost:10001", "key1")
+	err := operator.RegisterService("localhost:10001", "key1", "localhost:10002")
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -25,7 +25,7 @@ func main() {
 	// Start that service
 	http.HandleFunc("/foo", func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		fmt.Println("HERE!")
+		fmt.Println("Handling request...")
 		fmt.Fprintf(w, "bar")
 	})
 	err = http.ListenAndServe(":10002", nil)
