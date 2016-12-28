@@ -26,8 +26,11 @@ func (o *operatorManager) ResolveOperator(receiverID string) (string, error) {
 	return host, nil
 }
 
-func (o *operatorManager) SetOperator(receiverID string, host string) error {
-	o.operators[receiverID] = host
+func (o *operatorManager) SetOperator(receiverID string, address string) error {
+	if address == "" {
+		return fmt.Errorf("SetOperator error: address cannot be empty. Perhaps forgot to set the operator's address before serving.")
+	}
+	o.operators[receiverID] = address
 	return nil
 }
 

@@ -15,9 +15,13 @@ type OperatorInterface interface {
 	// Returns the ID of the operator
 	GetID() string
 
+	// Sets this operator's address to <addr> that the OperatorResolver will use
+	// When it creates a link, it calls OperatorResolver.SetOperator(<recID>, <addr>)
+	SetAddress(string) error
+
 	// Creates a bytestream server that other systems can create links to via the
 	// Link function.
-	Serve(port int) error
+	Serve(port int) OperatorInterface
 
 	// Creates the bytestream client. Every connection made
 	// to that local port will get forwarded to the operator node
@@ -25,9 +29,10 @@ type OperatorInterface interface {
 	LinkAndServe(port int, operatorAddr string) error
 }
 
-func NewOperator(receiverID string) *Operator {
+func NewOperator(receiverID, address string) *Operator {
 	o := &Operator{}
 	o.ReceiverID = receiverID
+	o.Address = address
 	o.OperatorResolver = DefaultOperatorResolver
 	o.ConnectionManager = DefaultConnectionManager
 	o.ServiceResolver = DefaultServiceResolver
@@ -36,6 +41,7 @@ func NewOperator(receiverID string) *Operator {
 
 type Operator struct {
 	ReceiverID        string
+	Address           string
 	ConnectionManager ConnectionManager
 	OperatorResolver  OperatorResolver
 	ServiceResolver   ServiceResolver
@@ -48,6 +54,11 @@ func (o *Operator) SetID(id string) *Operator {
 
 func (o *Operator) GetID() string {
 	return o.ReceiverID
+}
+
+func (o *Operator) SetAddress(address string) *Operator {
+	o.Address = address
+	return o
 }
 
 func (o *Operator) Serve(port int) error {
@@ -122,7 +133,10 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 
 			// Set and maintain that link
 			o.ConnectionManager.SetLink(cast.receiverID, conn)
-			o.OperatorResolver.SetOperator(cast.receiverID, "TODO-host.com")
+			err = o.OperatorResolver.SetOperator(cast.receiverID, o.Address)
+			if err != nil {
+				glog.Warningf("OperatorResolver error: %v", err)
+			}
 
 			glog.V(2).Infof("Linked to %s as %s", cast.receiverID, receiverId)
 
@@ -167,7 +181,7 @@ func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 	}
 	o.ConnectionManager.SetLink(req.receiverID, conn)
 
-	return o.OperatorResolver.SetOperator(req.receiverID, "TODO-host.com")
+	return o.OperatorResolver.SetOperator(req.receiverID, o.Address)
 }
 
 func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
