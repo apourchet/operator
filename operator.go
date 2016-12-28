@@ -97,7 +97,7 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 
 			// Send the link request
 			req := &LinkRequest{receiverId}
-			err = SendFrame(conn, req)
+			_, err = SendFrame(conn, req)
 			if err != nil {
 				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 				continue
@@ -161,7 +161,7 @@ func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 	glog.V(2).Infof("Link request: %s", req.String())
 
 	resp := &LinkResponse{o.GetID()}
-	err := SendFrame(conn, resp)
+	_, err := SendFrame(conn, resp)
 	if err != nil {
 		return err
 	}
@@ -175,7 +175,8 @@ func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) er
 	o.ServiceResolver.SetService(req.serviceKey, req.serviceHost)
 
 	resp := &RegisterResponse{}
-	return SendFrame(conn, resp)
+	_, err := SendFrame(conn, resp)
+	return err
 }
 
 func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
@@ -183,21 +184,24 @@ func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	l, err := o.ConnectionManager.GetLink(req.receiverID)
 	if err != nil {
 		glog.Warningf("Failed to get link %s: %v", req.receiverID, err)
-		return SendFrame(conn, &ErrorFrame{err.Error()})
+		_, err := SendFrame(conn, &ErrorFrame{err.Error()})
+		return err
 	}
 
 	frame := <-l.Tunnel(req.serviceKey)
 	res, ok := frame.(*DialResponse)
 	if frame.IsError() || !ok {
 		glog.Warningf("Dial error received from tunnel: %v", string(frame.Content()))
-		return SendFrame(conn, &ErrorFrame{"Service discovery failed: " + string(frame.Content())})
+		_, err := SendFrame(conn, &ErrorFrame{"Service discovery failed: " + string(frame.Content())})
+		return err
 	}
 
 	l.CreatePipe(res.channelID, conn)
 	l.PipeIn(res.channelID, conn)
 
 	resp := &DialResponse{res.channelID}
-	return SendFrame(conn, resp)
+	_, err = SendFrame(conn, resp)
+	return err
 }
 
 func (o *Operator) handleFrame(conn net.Conn, f Frame) error {
@@ -241,7 +245,7 @@ func RegisterListener(serviceHost, remotehost string, serviceKey string) error {
 
 	// Send register request
 	req := &RegisterRequest{serviceHost, serviceKey}
-	err = SendFrame(conn, req)
+	_, err = SendFrame(conn, req)
 	if err != nil {
 		glog.Errorf("Failed to register with operator: %v", err)
 		return err

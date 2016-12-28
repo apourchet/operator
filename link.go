@@ -31,7 +31,7 @@ func (l *Link) Tunnel(serviceKey string) chan Frame {
 	l.TunnelsWaiting[ID] = channel
 
 	req := &TunnelRequest{ID, serviceKey}
-	err := SendFrame(l, req)
+	_, err := SendFrame(l, req)
 	if err != nil {
 		msg := fmt.Sprintf("Unable to send dial through link: %v", err)
 		f := &ErrorFrame{msg}
@@ -81,17 +81,20 @@ func (l *Link) handleTunnelRequest(req *TunnelRequest) error {
 	glog.V(3).Infof("Link got tunnel request: %s", req.String())
 	serviceHost, found, err := DefaultServiceResolver.GetService(req.serviceKey)
 	if err != nil {
-		return SendFrame(l, &TunnelErrorFrame{req.channelID, err.Error()})
+		_, err := SendFrame(l, &TunnelErrorFrame{req.channelID, err.Error()})
+		return err
 	}
 
 	if !found {
-		return SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
+		_, err := SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
+		return err
 	}
 
 	conn, err := net.Dial("tcp", serviceHost)
 	if err != nil {
 		glog.Errorf("Failed to dial service %s (%s): %v", req.serviceKey, req.channelID, err)
-		return SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
+		_, err := SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
+		return err
 	}
 
 	l.CreatePipe(req.channelID, conn)
@@ -102,7 +105,8 @@ func (l *Link) handleTunnelRequest(req *TunnelRequest) error {
 	res.channelID = req.channelID
 
 	glog.V(2).Infof("Successfully handled tunnel request (%s)", req.channelID)
-	return SendFrame(l, res)
+	_, err = SendFrame(l, res)
+	return err
 }
 
 func (l *Link) handleTunnelResponse(res *TunnelResponse) error {
@@ -145,33 +149,16 @@ func (l *Link) CreatePipe(channelID string, conn net.Conn) {
 // Transforms it into a DataFrame
 // Sends DataFrame through the link
 func (l *Link) PipeIn(channelID string, conn net.Conn) {
-	buf := make([]byte, 4096)
-	frame := &DataFrame{}
 	go func() {
-		defer conn.Close()
-		for {
-			n, err := io.ReadAtLeast(conn, buf, 1)
-			if err == io.EOF {
-				glog.Warningf("Pipe closed (%s)", channelID)
-				l.Pipes[channelID] = nil
-				return
-			} else if err != nil {
-				glog.Warningf("Pipe error (%s): %v", channelID, err)
-				return
-			}
-
-			// Create the DataFrame from the bytes read
-			glog.V(3).Infof("Read %d bytes from pipe", n)
-			frame.receiverID = l.ReceiverID
-			frame.channelID = channelID
-			frame.content = EscapeContent(buf[:n])
-
-			// Send it through the link
-			err = SendFrame(l, frame)
-			if err != nil {
-				glog.Errorf("Failed to PipeIn: %v", err)
-				return
-			}
+		dest := NewLinkWriter(l, l.ReceiverID, channelID)
+		n, err := io.Copy(dest, conn)
+		if err != nil && err == io.EOF {
+			glog.Warningf("Pipe closed (%s). Wrote %d bytes", channelID, n)
+			l.Pipes[channelID] = nil
+			return
+		} else if err != nil {
+			glog.Warningf("Pipe error (%s): %v", channelID, err)
+			return
 		}
 	}()
 }

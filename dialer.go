@@ -53,7 +53,7 @@ func (d *Dialer) Dial(receiverID string, serviceKey string) (net.Conn, error) {
 
 	// Send the request
 	req := &DialRequest{receiverID, serviceKey}
-	err = SendFrame(conn, req)
+	_, err = SendFrame(conn, req)
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err

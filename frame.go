@@ -262,11 +262,10 @@ func (f *HeartbeatFrame) Parse(content string) error {
 	return nil
 }
 
-func SendFrame(conn net.Conn, frame Frame) error {
+func SendFrame(conn net.Conn, frame Frame) (int, error) {
 	data := append([]byte{frame.Header()}, frame.Content()...)
 	data = append(data, '\n')
-	_, err := conn.Write(data)
-	return err
+	return conn.Write(data)
 }
 
 func GetFrame(conn net.Conn) (Frame, error) {

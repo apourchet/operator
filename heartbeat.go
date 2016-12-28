@@ -21,7 +21,7 @@ type heartbeatManager struct{}
 func SendHeartbeats(conn net.Conn) error {
 	hb := &HeartbeatFrame{}
 	for {
-		err := SendFrame(conn, hb)
+		_, err := SendFrame(conn, hb)
 		if err != nil {
 			glog.Warningf("Failed to heartbeat: %v", err)
 			return err
