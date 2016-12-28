@@ -16,7 +16,7 @@ func init() {
 func main() {
 	flag.Parse()
 
-	// Register listener to server
+	// Register listener to local operator on localhost:10001
 	err := operator.RegisterService("localhost:10001", "key1", "localhost:10002")
 	if err != nil {
 		glog.Fatal(err)
