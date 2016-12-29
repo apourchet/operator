@@ -1,6 +1,9 @@
 package operator
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
 type OperatorResolver interface {
 	ResolveOperator(receiverID string) (string, error)
@@ -10,12 +13,13 @@ type OperatorResolver interface {
 var DefaultOperatorResolver OperatorResolver = nil
 
 func init() {
-	om := &operatorManager{map[string]string{}}
+	om := &operatorManager{map[string]string{}, sync.Mutex{}}
 	DefaultOperatorResolver = om
 }
 
 type operatorManager struct {
 	operators map[string]string
+	lock      sync.Mutex
 }
 
 func (o *operatorManager) ResolveOperator(receiverID string) (string, error) {
@@ -30,6 +34,8 @@ func (o *operatorManager) SetOperator(receiverID string, address string) error {
 	if address == "" {
 		return fmt.Errorf("SetOperator error: address cannot be empty. Perhaps forgot to set the operator's address before serving.")
 	}
+	o.lock.Lock()
+	defer o.lock.Unlock()
 	o.operators[receiverID] = address
 	return nil
 }
@@ -42,15 +48,18 @@ type ServiceResolver interface {
 var DefaultServiceResolver ServiceResolver = nil
 
 func init() {
-	sm := &MemoryServiceResolver{map[string]string{}}
+	sm := &MemoryServiceResolver{map[string]string{}, sync.Mutex{}}
 	DefaultServiceResolver = sm
 }
 
 type MemoryServiceResolver struct {
 	Services map[string]string // map from service key to service address
+	lock     sync.Mutex
 }
 
 func (r *MemoryServiceResolver) SetService(serviceName string, host string) error {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	r.Services[serviceName] = host
 	return nil
 }
