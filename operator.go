@@ -2,6 +2,7 @@ package operator
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"time"
 
@@ -101,7 +102,7 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 			conn, err := net.Dial("tcp", host)
 			if err != nil {
 				glog.Errorf("Failed to link to %s: %v. Retrying...", host, err)
-				time.Sleep(2 * time.Second)
+				time.Sleep(time.Duration(1000+rand.Int31n(3000)) * time.Millisecond)
 				continue
 			}
 			defer conn.Close()

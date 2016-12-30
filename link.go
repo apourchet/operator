@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/golang/glog"
@@ -14,11 +15,12 @@ type Link struct {
 	TunnelsWaiting map[string]chan Frame
 	Pipes          map[string]net.Conn
 	ReceiverID     string
+	tunnelLock     sync.Mutex
 	net.Conn
 }
 
 func NewLink(conn net.Conn, receiverID string) *Link {
-	l := Link{time.Now(), map[string]chan Frame{}, map[string]net.Conn{}, receiverID, conn}
+	l := Link{time.Now(), map[string]chan Frame{}, map[string]net.Conn{}, receiverID, sync.Mutex{}, conn}
 	return &l
 }
 
@@ -28,7 +30,9 @@ func NewLink(conn net.Conn, receiverID string) *Link {
 func (l *Link) Tunnel(serviceKey string) chan Frame {
 	ID := NewID()
 	channel := make(chan Frame, 1)
+	l.tunnelLock.Lock()
 	l.TunnelsWaiting[ID] = channel
+	l.tunnelLock.Unlock()
 
 	req := &TunnelRequest{ID, serviceKey}
 	_, err := SendFrame(l, req)
@@ -154,7 +158,9 @@ func (l *Link) PipeIn(channelID string, conn net.Conn) {
 		n, err := io.Copy(dest, conn)
 		if err != nil && err == io.EOF {
 			glog.Warningf("Pipe closed (%s). Wrote %d bytes", channelID, n)
-			l.Pipes[channelID] = nil
+			l.tunnelLock.Lock()
+			delete(l.Pipes, channelID)
+			l.tunnelLock.Unlock()
 			return
 		} else if err != nil {
 			glog.Warningf("Pipe error (%s): %v", channelID, err)
