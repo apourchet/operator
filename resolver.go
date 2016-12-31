@@ -23,6 +23,8 @@ type operatorManager struct {
 }
 
 func (o *operatorManager) ResolveOperator(receiverID string) (string, error) {
+	o.lock.Lock()
+	defer o.lock.Unlock()
 	host, found := o.operators[receiverID]
 	if !found {
 		return "", fmt.Errorf("Operator not found")
@@ -65,6 +67,8 @@ func (r *MemoryServiceResolver) SetService(serviceName string, host string) erro
 }
 
 func (r *MemoryServiceResolver) GetService(serviceName string) (string, bool, error) {
+	r.lock.Lock()
+	defer r.lock.Unlock()
 	serviceHost, found := r.Services[serviceName]
 	return serviceHost, found, nil
 }

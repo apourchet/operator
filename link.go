@@ -30,14 +30,17 @@ func NewLink(conn net.Conn, receiverID string) *Link {
 func (l *Link) Tunnel(serviceKey string) chan Frame {
 	ID := NewID()
 	channel := make(chan Frame, 1)
+
 	l.tunnelLock.Lock()
 	l.TunnelsWaiting[ID] = channel
 	l.tunnelLock.Unlock()
 
+	glog.V(2).Infof("Tunneling to %s for service %s (%s)", l.ReceiverID, serviceKey, ID)
 	req := &TunnelRequest{ID, serviceKey}
 	_, err := SendFrame(l, req)
 	if err != nil {
 		msg := fmt.Sprintf("Unable to send dial through link: %v", err)
+		glog.Errorf("Tunneling error: %v", err)
 		f := &ErrorFrame{msg}
 		channel <- f
 	}
@@ -97,7 +100,7 @@ func (l *Link) handleTunnelRequest(req *TunnelRequest) error {
 	conn, err := net.Dial("tcp", serviceHost)
 	if err != nil {
 		glog.Errorf("Failed to dial service %s (%s): %v", req.serviceKey, req.channelID, err)
-		_, err := SendFrame(l, &TunnelErrorFrame{req.channelID, "Service not found"})
+		_, err := SendFrame(l, &TunnelErrorFrame{req.channelID, "Service connection error: " + err.Error()})
 		return err
 	}
 
@@ -146,6 +149,8 @@ func (l *Link) handleTunnelError(res *TunnelErrorFrame) error {
 // will be forwarded to this connection
 func (l *Link) CreatePipe(channelID string, conn net.Conn) {
 	glog.V(2).Infof("Link creating pipe (%s)", channelID)
+	l.tunnelLock.Lock()
+	defer l.tunnelLock.Unlock()
 	l.Pipes[channelID] = conn
 }
 
@@ -212,7 +217,6 @@ func (l *Link) handleFrame(f Frame) error {
 		return l.handleTunnelError(res)
 
 	case HEADER_HEARTBEAT:
-		glog.V(3).Infof("Link got heartbeat: %s", f.String())
 		l.LastHeartbeat = time.Now()
 		return nil
 	}

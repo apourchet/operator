@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 
@@ -16,27 +15,31 @@ func init() {
 
 func main() {
 	flag.Parse()
+	single()
+	many()
+}
 
+func single() {
 	dialer := operator.NewDialer(nil)
-	dialer.OperatorResolver.SetOperator("phone1", "localhost:10000")
+	dialer.OperatorResolver.SetOperator("phone0", "localhost:10000")
 	tr := &http.Transport{DialContext: dialer.DialContext()}
 
-	for i := 0; i < 10; i++ {
-		client := &http.Client{Transport: tr}
-		resp, err := client.Get("http://phone1.key1/foo")
-		if err != nil {
-			glog.Fatal(err)
-		}
-		defer resp.Body.Close()
+	client := &http.Client{Transport: tr}
+	resp, err := client.Get("http://phone0.godoc/")
+	if err != nil {
+		glog.Fatal(err)
+	}
+	defer resp.Body.Close()
 
-		body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			glog.Fatal(err)
-		}
-		if string(body) != "bar" {
-			fmt.Println("ERROR", string(body))
-		} else {
-			fmt.Println("Success", i)
-		}
+	_, err = ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	glog.Infof("Success")
+}
+
+func many() {
+	for i := 0; i < 100; i++ {
+		single()
 	}
 }

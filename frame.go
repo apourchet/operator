@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+
+	"github.com/golang/glog"
 )
 
 // The header type will be contained in the first byte
@@ -262,31 +264,26 @@ func (f *HeartbeatFrame) Parse(content string) error {
 	return nil
 }
 
+const (
+	FRAME_DELIMITER = '\n'
+)
+
 func SendFrame(conn net.Conn, frame Frame) (int, error) {
 	data := append([]byte{frame.Header()}, frame.Content()...)
-	data = append(data, '\n')
+	data = append(data, FRAME_DELIMITER)
 	return conn.Write(data)
 }
 
 func GetFrame(conn net.Conn) (Frame, error) {
-	// Read the first byte to get the header
-	h := make([]byte, 1)
-	n, err := conn.Read(h)
-	if err != nil {
-		return nil, err
-	}
-	if n != 1 {
-		return nil, fmt.Errorf("Failed to read header")
-	}
-
 	// Read the content that ends with a newline character
-	content, err := bufio.NewReader(conn).ReadString('\n')
+	content, err := bufio.NewReader(conn).ReadString(FRAME_DELIMITER)
 	if err != nil {
 		return nil, err
 	}
-	content = strings.Trim(content, "\n")
+	h := content[0]
+	content = content[1 : len(content)-1]
 
-	switch h[0] {
+	switch h {
 	case HEADER_ERROR:
 		f := &ErrorFrame{}
 		return f, f.Parse(content)
@@ -335,5 +332,6 @@ func GetFrame(conn net.Conn) (Frame, error) {
 		return f, err
 	}
 
-	return nil, fmt.Errorf("Unrecognized header: %x", h[0])
+	glog.Errorf("Unrecognized header: %x => %s", h, content)
+	return nil, fmt.Errorf("Unrecognized header: %x", h)
 }
