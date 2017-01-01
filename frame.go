@@ -269,6 +269,7 @@ const (
 )
 
 func SendFrame(conn net.Conn, frame Frame) (int, error) {
+	glog.V(3).Infof("Sending frame: %s", frame.String())
 	data := append([]byte{frame.Header()}, frame.Content()...)
 	data = append(data, FRAME_DELIMITER)
 	return conn.Write(data)
