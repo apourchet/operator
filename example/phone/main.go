@@ -19,7 +19,7 @@ func main() {
 }
 
 func single() {
-	err := operator.NewOperator("phone0", "localhost:10001").LinkAndServe(10001, "localhost:10000")
+	err := operator.NewOperator("phone0", "localhost:10001").LinkAndServe(10001, "104.155.134.17:10000")
 	if err != nil {
 		glog.Fatal(err)
 	}

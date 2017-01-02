@@ -1,24 +1,19 @@
 package operator
 
-import (
-	"net"
-	"sync"
-)
+import "net"
 
 type LinkWriter struct {
-	dest  net.Conn
-	frame *DataFrame
-	lock  sync.Mutex
+	dest       net.Conn
+	receiverID string
+	channelID  string
 }
 
 func NewLinkWriter(dest net.Conn, receiverID, channelID string) *LinkWriter {
-	return &LinkWriter{dest, &DataFrame{receiverID, channelID, ""}, sync.Mutex{}}
+	return &LinkWriter{dest, receiverID, channelID}
 }
 
 func (l *LinkWriter) Write(p []byte) (int, error) {
-	l.lock.Lock()
-	defer l.lock.Unlock()
-	l.frame.content = EscapeContent(p)
-	_, err := SendFrame(l.dest, l.frame)
+	frame := &DataFrame{l.receiverID, l.channelID, EscapeContent(p)}
+	_, err := SendFrame(l.dest, frame)
 	return len(p), err
 }

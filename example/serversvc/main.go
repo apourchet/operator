@@ -19,6 +19,25 @@ func main() {
 	many()
 }
 
+func simple() {
+	dialer := operator.NewDialer(nil)
+	dialer.OperatorResolver.SetOperator("phone0", "localhost:10000")
+	tr := &http.Transport{DialContext: dialer.DialContext()}
+
+	client := &http.Client{Transport: tr}
+	resp, err := client.Get("http://phone0.foo/foo")
+	if err != nil {
+		glog.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	glog.Infof(string(body))
+}
+
 func single() {
 	dialer := operator.NewDialer(nil)
 	dialer.OperatorResolver.SetOperator("phone0", "localhost:10000")
@@ -39,7 +58,7 @@ func single() {
 }
 
 func many() {
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 1000; i++ {
 		single()
 	}
 }
