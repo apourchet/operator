@@ -2,12 +2,11 @@ package operator
 
 import (
 	"fmt"
-	"net"
 	"sync"
 )
 
 type ConnectionManager interface {
-	SetLink(receiverID string, conn net.Conn) error
+	SetLink(receiverID string, conn FrameReadWriter) error
 	GetLink(receiverID string) (*Link, error)
 	RemoveLink(receiverID string) error
 }
@@ -23,7 +22,7 @@ func newConnectionManager() ConnectionManager {
 	return &connectionManager{map[string]*Link{}, sync.Mutex{}}
 }
 
-func (c *connectionManager) SetLink(receiverID string, conn net.Conn) error {
+func (c *connectionManager) SetLink(receiverID string, conn FrameReadWriter) error {
 	l := NewLink(conn, receiverID)
 	c.lock.Lock()
 	defer c.lock.Unlock()

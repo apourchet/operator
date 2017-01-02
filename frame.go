@@ -3,7 +3,7 @@ package operator
 import (
 	"bufio"
 	"fmt"
-	"net"
+	"io"
 	"strings"
 
 	"github.com/golang/glog"
@@ -268,7 +268,7 @@ const (
 	FRAME_DELIMITER = '\n'
 )
 
-func SendFrame(conn net.Conn, frame Frame) (int, error) {
+func sendFrame(conn io.Writer, frame Frame) (int, error) {
 	// glog.V(3).Infof("Sending frame: %s", frame.String())
 	data := append([]byte{frame.Header()}, frame.Content()...)
 	data = append(data, FRAME_DELIMITER)
@@ -276,9 +276,9 @@ func SendFrame(conn net.Conn, frame Frame) (int, error) {
 	return conn.Write(data)
 }
 
-func GetFrame(conn net.Conn) (Frame, error) {
+func getFrame(reader *bufio.Reader) (Frame, error) {
 	// Read the content that ends with a newline character
-	content, err := bufio.NewReader(conn).ReadString(FRAME_DELIMITER)
+	content, err := reader.ReadString(FRAME_DELIMITER)
 	if err != nil {
 		return nil, err
 	}
@@ -294,44 +294,34 @@ func GetFrame(conn net.Conn) (Frame, error) {
 		return f, f.Parse(content)
 	case HEADER_DATA:
 		f := &DataFrame{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_LINK_REQ:
 		f := &LinkRequest{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_LINK_RES:
 		f := &LinkResponse{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_REGISTER_REQ:
 		f := &RegisterRequest{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_REGISTER_RES:
 		f := &RegisterResponse{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_DIAL_REQ:
 		f := &DialRequest{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_DIAL_RES:
 		f := &DialResponse{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_TUNNEL_REQ:
 		f := &TunnelRequest{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_TUNNEL_RES:
 		f := &TunnelResponse{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	case HEADER_HEARTBEAT:
 		f := &HeartbeatFrame{}
-		err = f.Parse(content)
-		return f, err
+		return f, f.Parse(content)
 	}
 
 	glog.Errorf("Unrecognized header: %x => %s", h, content)

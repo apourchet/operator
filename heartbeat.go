@@ -1,7 +1,6 @@
 package operator
 
 import (
-	"net"
 	"time"
 
 	"github.com/golang/glog"
@@ -18,10 +17,10 @@ type heartbeatManager struct{}
 
 // Sends heartbeats as long as the connection isn't closed
 // and we do not get an error
-func SendHeartbeats(conn net.Conn) error {
+func SendHeartbeats(conn FrameWriter) error {
 	hb := &HeartbeatFrame{}
 	for {
-		_, err := SendFrame(conn, hb)
+		_, err := conn.SendFrame(hb)
 		if err != nil {
 			glog.Warningf("Failed to heartbeat: %v", err)
 			return err

@@ -52,16 +52,19 @@ func (d *Dialer) Dial(receiverID string, serviceKey string) (net.Conn, error) {
 		return nil, err
 	}
 
+	// Upgrade to buffered connection reader
+	bufConn := NewBufferedConnection(conn)
+
 	// Send the request
 	req := &DialRequest{receiverID, serviceKey}
-	_, err = SendFrame(conn, req)
+	_, err = bufConn.SendFrame(req)
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err
 	}
 
 	// Read the response frame
-	resp, err := GetFrame(conn)
+	resp, err := bufConn.GetFrame()
 	if err != nil {
 		glog.Errorf("Failed to dial operator: %v", err)
 		return nil, err

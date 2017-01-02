@@ -15,6 +15,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	// simple()
 	single()
 	many()
 }
@@ -58,7 +59,7 @@ func single() {
 }
 
 func many() {
-	for i := 0; i < 1000; i++ {
+	for i := 0; i < 10000; i++ {
 		single()
 	}
 }

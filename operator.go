@@ -81,7 +81,7 @@ func (o *Operator) Serve(port int) error {
 		glog.V(3).Infof("Accepted connection")
 
 		go func() {
-			err := o.respond(conn)
+			err := o.respond(NewBufferedConnection(conn))
 			if err != nil {
 				glog.Warningf("Failed to respond to connection: %v", err)
 				return
@@ -107,16 +107,18 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 			}
 			defer conn.Close()
 
+			bufConn := NewBufferedConnection(conn)
+
 			// Send the link request
 			req := &LinkRequest{receiverId}
-			_, err = SendFrame(conn, req)
+			_, err = bufConn.SendFrame(req)
 			if err != nil {
 				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 				continue
 			}
 
 			// Check the response is good
-			resp, err := GetFrame(conn)
+			resp, err := bufConn.GetFrame()
 			if err != nil {
 				glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 				continue
@@ -133,7 +135,7 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 			}
 
 			// Set and maintain that link
-			o.ConnectionManager.SetLink(cast.receiverID, conn)
+			o.ConnectionManager.SetLink(cast.receiverID, bufConn)
 			err = o.OperatorResolver.SetOperator(cast.receiverID, o.Address)
 			if err != nil {
 				glog.Warningf("OperatorResolver error: %v", err)
@@ -142,7 +144,7 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 			glog.V(2).Infof("Linked to %s as %s", cast.receiverID, receiverId)
 
 			// Send heartbeats until it closes
-			err = SendHeartbeats(conn) // Blocks
+			err = SendHeartbeats(bufConn) // Blocks
 			glog.Warningf("Broken link to %s as %s: %vRetrying...", host, receiverId, err)
 
 			o.ConnectionManager.RemoveLink(cast.receiverID)
@@ -153,9 +155,9 @@ func (o *Operator) LinkAndServe(port int, host string) error {
 	return o.Serve(port)
 }
 
-func (o *Operator) respond(conn net.Conn) error {
+func (o *Operator) respond(conn FrameReadWriter) error {
 	// Get the outstanding frame from that connection
-	f, err := GetFrame(conn)
+	f, err := conn.GetFrame()
 	if err != nil {
 		return err
 	}
@@ -172,11 +174,11 @@ func (o *Operator) respond(conn net.Conn) error {
 	return nil
 }
 
-func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
+func (o *Operator) handleLinkRequest(conn FrameReadWriter, req *LinkRequest) error {
 	glog.V(2).Infof("Link request: %s", req.String())
 
 	resp := &LinkResponse{o.GetID()}
-	_, err := SendFrame(conn, resp)
+	_, err := conn.SendFrame(resp)
 	if err != nil {
 		return err
 	}
@@ -185,21 +187,21 @@ func (o *Operator) handleLinkRequest(conn net.Conn, req *LinkRequest) error {
 	return o.OperatorResolver.SetOperator(req.receiverID, o.Address)
 }
 
-func (o *Operator) handleRegisterRequest(conn net.Conn, req *RegisterRequest) error {
+func (o *Operator) handleRegisterRequest(conn FrameReadWriter, req *RegisterRequest) error {
 	glog.V(2).Infof("Register request %s", req.String())
 	o.ServiceResolver.SetService(req.serviceKey, req.serviceHost)
 
 	resp := &RegisterResponse{}
-	_, err := SendFrame(conn, resp)
+	_, err := conn.SendFrame(resp)
 	return err
 }
 
-func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
+func (o *Operator) handleDialRequest(conn FrameReadWriter, req *DialRequest) error {
 	glog.V(2).Infof("Dial request to %s", req.String())
 	l, err := o.ConnectionManager.GetLink(req.receiverID)
 	if err != nil {
 		glog.Warningf("Failed to get link %s: %v", req.receiverID, err)
-		_, err := SendFrame(conn, &ErrorFrame{err.Error()})
+		_, err := conn.SendFrame(&ErrorFrame{err.Error()})
 		return err
 	}
 
@@ -207,7 +209,7 @@ func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	res, ok := frame.(*DialResponse)
 	if frame.IsError() || !ok {
 		glog.Warningf("Dial error received from tunnel: %v", string(frame.Content()))
-		_, err := SendFrame(conn, &ErrorFrame{"Service discovery failed: " + string(frame.Content())})
+		_, err := conn.SendFrame(&ErrorFrame{"Service discovery failed: " + string(frame.Content())})
 		return err
 	}
 
@@ -215,11 +217,11 @@ func (o *Operator) handleDialRequest(conn net.Conn, req *DialRequest) error {
 	l.PipeIn(res.channelID, conn)
 
 	resp := &DialResponse{res.channelID}
-	_, err = SendFrame(conn, resp)
+	_, err = conn.SendFrame(resp)
 	return err
 }
 
-func (o *Operator) handleFrame(conn net.Conn, f Frame) error {
+func (o *Operator) handleFrame(conn FrameReadWriter, f Frame) error {
 	switch f.Header() {
 	case HEADER_LINK_REQ:
 		req, ok := f.(*LinkRequest)
@@ -258,16 +260,18 @@ func RegisterService(operatorAddr, serviceKey, serviceAddr string) error {
 		return err
 	}
 
+	bufConn := NewBufferedConnection(conn)
+
 	// Send register request
 	req := &RegisterRequest{serviceAddr, serviceKey}
-	_, err = SendFrame(conn, req)
+	_, err = bufConn.SendFrame(req)
 	if err != nil {
 		glog.Errorf("Failed to register with operator: %v", err)
 		return err
 	}
 
 	// Read the response frame
-	f, err := GetFrame(conn)
+	f, err := bufConn.GetFrame()
 	if err != nil {
 		glog.Errorf("Failed to register service: %v", err)
 		return err
