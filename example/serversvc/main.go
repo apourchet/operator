@@ -16,8 +16,9 @@ func init() {
 func main() {
 	flag.Parse()
 	// simple()
-	single()
-	many()
+	// single()
+	// many()
+	parallel()
 }
 
 func simple() {
@@ -45,7 +46,13 @@ func single() {
 	tr := &http.Transport{DialContext: dialer.DialContext()}
 
 	client := &http.Client{Transport: tr}
-	resp, err := client.Get("http://phone0.godoc/")
+	req, err := http.NewRequest("GET", "http://phone0.godoc/", nil)
+	if err != nil {
+		glog.Fatal(err)
+	}
+	req.Header.Set("Connection", "close")
+
+	resp, err := client.Do(req)
 	if err != nil {
 		glog.Fatal(err)
 	}
@@ -62,4 +69,11 @@ func many() {
 	for i := 0; i < 10000; i++ {
 		single()
 	}
+}
+
+func parallel() {
+	for i := 0; i < 100; i++ {
+		go single()
+	}
+	select {}
 }

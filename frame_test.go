@@ -1,8 +1,8 @@
 package operator
 
 import (
+	"bufio"
 	"bytes"
-	"fmt"
 	"runtime/debug"
 	"testing"
 
@@ -20,33 +20,38 @@ func TestOne(t *testing.T) {
 	buf := bytes.NewBuffer([]byte{})
 
 	frame := &HeartbeatFrame{}
-	n, err := SendFrame(buf, frame)
+	n, err := sendFrame(buf, frame)
 	Fatalize(t, err)
 	assert.NotEqual(t, 0, n)
 
-	frame1, err := GetFrame(buf)
+	frame1, err := getFrame(bufio.NewReader(buf))
 	Fatalize(t, err)
 	assert.Equal(t, frame, frame1)
 }
 
 func TestTwo(t *testing.T) {
 	buf := bytes.NewBuffer([]byte{})
+	reader := bufio.NewReader(buf)
 
 	frame := &HeartbeatFrame{}
-	n, err := SendFrame(buf, frame)
-	Fatalize(t, err)
-	assert.NotEqual(t, 0, n)
-	n, err = SendFrame(buf, frame)
+
+	// Send 1st frame
+	n, err := sendFrame(buf, frame)
 	Fatalize(t, err)
 	assert.NotEqual(t, 0, n)
 
-	fmt.Println(buf.Bytes())
-	frame1, err := GetFrame(buf)
+	// Send 2nd frame
+	n, err = sendFrame(buf, frame)
+	Fatalize(t, err)
+	assert.NotEqual(t, 0, n)
+
+	// Get 1st frame
+	frame1, err := getFrame(reader)
 	Fatalize(t, err)
 	assert.Equal(t, frame, frame1)
 
-	fmt.Println(buf.Bytes())
-	frame1, err = GetFrame(buf)
+	// Get 2nd frame
+	frame1, err = getFrame(reader)
 	Fatalize(t, err)
 	assert.Equal(t, frame, frame1)
 }
