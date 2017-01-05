@@ -238,6 +238,7 @@ func (link *Link) handleFrame(f Frame) error {
 		return link.handleTunnelError(res)
 
 	case HEADER_HEARTBEAT:
+		glog.V(4).Infof("Got heartbeat for %s", link.ReceiverID)
 		link.LastHeartbeat = time.Now()
 		return nil
 	}
